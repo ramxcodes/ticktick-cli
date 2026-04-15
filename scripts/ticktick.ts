@@ -22,6 +22,7 @@ import {
   checklistDeleteCommand,
 } from "./commands/checklist";
 import { moveCommand } from "./commands/move";
+import { getTaskCommand } from "./commands/get-task";
 
 const program = new Command();
 
@@ -107,6 +108,14 @@ program
   )
   .option("--json", "Output as JSON")
   .action(tasksCommand);
+
+// Get-task command - fetch one task by id or title
+program
+  .command("get-task <task>")
+  .description("Get a single task with full details")
+  .option("-l, --list <name>", "Project name or ID to search in")
+  .option("--json", "Output as JSON")
+  .action(getTaskCommand);
 
 // Task command - create or update task with reminders and all-day support
 program

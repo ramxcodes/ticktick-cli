@@ -159,6 +159,34 @@ Tasks (3):
 
 ---
 
+### Workflow 2.5: Get a Single Task (Full Details)
+
+Use this when you need one task by ID or exact title.
+
+```bash
+# By task ID (most reliable)
+bun run scripts/ticktick.ts get-task "694eea8a8e991102e9cf90fd" --json
+
+# By exact title (search across projects)
+bun run scripts/ticktick.ts get-task "Websocket server in GO" --json
+
+# By title within a specific project
+bun run scripts/ticktick.ts get-task "Websocket server in GO" --list "💻Programming" --json
+```
+
+**Output (JSON includes full content, unmasked):**
+```json
+{
+  "id": "694eea8a8e991102e9cf90fd",
+  "projectId": "6898e9e5a94951605d41d231",
+  "title": "Websocket server in GO",
+  "content": "full raw content here",
+  "status": 0
+}
+```
+
+---
+
 ### Workflow 3: Create Tasks
 
 **Simple task:**
@@ -520,6 +548,32 @@ The CLI automatically refreshes tokens when they expire.
 
 This CLI uses the [TickTick Open API v1](https://developer.ticktick.com/api).
 
+### Curl Structure (OAuth2)
+
+Use the OAuth token from `~/.clawdbot/credentials/ticktick-cli/config.json`:
+
+```bash
+TOKEN=$(jq -r '.accessToken' ~/.clawdbot/credentials/ticktick-cli/config.json)
+```
+
+Core request pattern:
+
+```bash
+curl -s \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  https://api.ticktick.com/open/v1/project
+```
+
+Important endpoints:
+
+- List projects: `GET /open/v1/project`
+- Fetch tasks for a project: `GET /open/v1/project/{projectId}/data`
+- Create task: `POST /open/v1/task`
+- Update task: `POST /open/v1/task/{taskId}`
+
+Note: `GET /open/v1/project/{projectId}/task` is not valid (404). Use `/data`.
+
 ### Rate Limits
 - **100 requests per minute**
 - **300 requests per 5 minutes**
@@ -547,6 +601,7 @@ The CLI has built-in retry logic with exponential backoff for rate limit errors.
 |---------|---------|--------|
 | `lists --json` | Get project IDs | JSON array of projects |
 | `tasks --date today --json` | Today's tasks | JSON array of tasks |
+| `get-task "<task-id-or-title>" --json` | Get one task | JSON task object with full `content` |
 | `task "Title" --list "Project" --json` | Create task | JSON task object |
 | `task "Title" --list "Project" --note --json` | Create note | JSON note object |
 | `complete "Task" --json` | Complete task | JSON success + task info |
