@@ -27,110 +27,349 @@ function isTaskId(str: string): boolean {
   return /^[a-f0-9]{24}$/i.test(str);
 }
 
+const IST_OFFSET_MINUTES = 5 * 60 + 30;
+const IST_OFFSET_MS = IST_OFFSET_MINUTES * 60 * 1000;
+
+type IstParts = {
+  year: number;
+  month: number;
+  day: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+  milliseconds: number;
+};
+
+function nowInIstParts(reference: Date = new Date()): IstParts {
+  const shifted = new Date(reference.getTime() + IST_OFFSET_MS);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    hours: shifted.getUTCHours(),
+    minutes: shifted.getUTCMinutes(),
+    seconds: shifted.getUTCSeconds(),
+    milliseconds: shifted.getUTCMilliseconds(),
+  };
+}
+
+function istPartsToDate(parts: IstParts): Date {
+  const utcMillis = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hours,
+    parts.minutes,
+    parts.seconds,
+    parts.milliseconds
+  ) - IST_OFFSET_MS;
+  return new Date(utcMillis);
+}
+
+function toTickTickIso(date: Date): string {
+  return date.toISOString().replace("Z", "+0000");
+}
+
+function hasExplicitTimezone(value: string): boolean {
+  return /(z|[+-]\d{2}:?\d{2})$/i.test(value.trim());
+}
+
+function parseTimePart(timePart: string): { hours: number; minutes: number } | undefined {
+  const normalized = timePart.trim().toLowerCase();
+
+  // 14:30
+  const twentyFourHour = normalized.match(/^(\d{1,2}):(\d{2})$/);
+  if (twentyFourHour) {
+    const hours = parseInt(twentyFourHour[1], 10);
+    const minutes = parseInt(twentyFourHour[2], 10);
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return { hours, minutes };
+    }
+    return undefined;
+  }
+
+  // 9am, 9:15pm, 12 am
+  const twelveHour = normalized.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/);
+  if (twelveHour) {
+    const rawHour = parseInt(twelveHour[1], 10);
+    const minutes = twelveHour[2] ? parseInt(twelveHour[2], 10) : 0;
+    const meridian = twelveHour[3];
+
+    if (rawHour < 1 || rawHour > 12 || minutes < 0 || minutes > 59) {
+      return undefined;
+    }
+
+    let hours = rawHour % 12;
+    if (meridian === "pm") {
+      hours += 12;
+    }
+
+    return { hours, minutes };
+  }
+
+  return undefined;
+}
+
+function formatUtcIst(timestamp: string): { utc: string; ist: string } {
+  const date = new Date(timestamp);
+  const utc = date.toLocaleString("en-GB", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  const ist = date.toLocaleString("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  return { utc: `${utc} UTC`, ist: `${ist} IST` };
+}
+
 function parseReminder(reminderStr: string): string {
   const now = new Date();
-  const lowerReminder = reminderStr.toLowerCase();
+  const nowIst = nowInIstParts(now);
+  const lowerReminder = reminderStr.toLowerCase().trim();
 
-  // Helper to format as ISO string
-  const toIso = (d: Date): string => {
-    return d.toISOString().replace("Z", "+0000");
-  };
-
-  // Relative minutes/hours before due
-  if (lowerReminder.match(/^(\d+)\s*(m|min|mins|minute|minutes)$/i)) {
-    const match = lowerReminder.match(/^(\d+)\s*(m|min|mins|minute|minutes)$/i);
-    if (match) {
-      now.setMinutes(now.getMinutes() + parseInt(match[1], 10));
-      return toIso(now);
-    }
-  }
-  if (lowerReminder.match(/^(\d+)\s*(h|hr|hrs|hour|hours)$/i)) {
-    const match = lowerReminder.match(/^(\d+)\s*(h|hr|hrs|hour|hours)$/i);
-    if (match) {
-      now.setHours(now.getHours() + parseInt(match[1], 10));
-      return toIso(now);
-    }
+  // Relative reminders: 30m, 2h
+  let match = lowerReminder.match(/^(\d+)\s*(m|min|mins|minute|minutes)$/i);
+  if (match) {
+    const minutes = parseInt(match[1], 10);
+    return toTickTickIso(new Date(now.getTime() + minutes * 60 * 1000));
   }
 
-  // Specific times like "9am", "14:30"
-  if (lowerReminder.match(/^\d{1,2}:\d{2}$/)) {
-    const [hours, minutes] = reminderStr.split(":").map(Number);
-    now.setHours(hours, minutes, 0, 0);
-    if (now < new Date()) {
-      now.setDate(now.getDate() + 1); // If time passed, set to tomorrow
-    }
-    return toIso(now);
+  match = lowerReminder.match(/^(\d+)\s*(h|hr|hrs|hour|hours)$/i);
+  if (match) {
+    const hours = parseInt(match[1], 10);
+    return toTickTickIso(new Date(now.getTime() + hours * 60 * 60 * 1000));
   }
 
-  // Today/tomorrow with time
-  if (lowerReminder.startsWith("today ")) {
-    const timePart = reminderStr.substring(6);
-    const parsed = new Date(`${now.toDateString()} ${timePart}`);
-    if (!isNaN(parsed.getTime())) {
-      return toIso(parsed);
+  // Time only (interpreted in IST by default)
+  const timeOnly = parseTimePart(reminderStr);
+  if (timeOnly) {
+    let target: IstParts = {
+      ...nowIst,
+      hours: timeOnly.hours,
+      minutes: timeOnly.minutes,
+      seconds: 0,
+      milliseconds: 0,
+    };
+
+    let targetDate = istPartsToDate(target);
+    if (targetDate.getTime() <= now.getTime()) {
+      const tomorrowInIst = istPartsToDate({
+        ...nowIst,
+        day: nowIst.day + 1,
+        hours: 0,
+        minutes: 0,
+        seconds: 0,
+        milliseconds: 0,
+      });
+      const tomorrowParts = nowInIstParts(tomorrowInIst);
+      target = {
+        ...tomorrowParts,
+        hours: timeOnly.hours,
+        minutes: timeOnly.minutes,
+        seconds: 0,
+        milliseconds: 0,
+      };
+      targetDate = istPartsToDate(target);
     }
+
+    return toTickTickIso(targetDate);
   }
-  if (lowerReminder.startsWith("tomorrow ")) {
-    const timePart = reminderStr.substring(9);
-    const parsed = new Date(`${now.toDateString()} ${timePart}`);
-    parsed.setDate(parsed.getDate() + 1);
-    if (!isNaN(parsed.getTime())) {
-      return toIso(parsed);
+
+  // today/tomorrow + time (interpreted in IST)
+  if (lowerReminder.startsWith("today ") || lowerReminder.startsWith("tomorrow ")) {
+    const isTomorrow = lowerReminder.startsWith("tomorrow ");
+    const timePart = reminderStr.substring(isTomorrow ? 9 : 6);
+    const parsedTime = parseTimePart(timePart);
+
+    if (parsedTime) {
+      const base = isTomorrow
+        ? nowInIstParts(istPartsToDate({
+            ...nowIst,
+            day: nowIst.day + 1,
+            hours: 0,
+            minutes: 0,
+            seconds: 0,
+            milliseconds: 0,
+          }))
+        : nowIst;
+
+      return toTickTickIso(
+        istPartsToDate({
+          ...base,
+          hours: parsedTime.hours,
+          minutes: parsedTime.minutes,
+          seconds: 0,
+          milliseconds: 0,
+        })
+      );
     }
   }
 
-  // Try parsing as ISO date
+  // Date-time string without timezone: treat as IST by default
+  if (!hasExplicitTimezone(reminderStr)) {
+    const parsedLocal = reminderStr.match(
+      /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+    );
+
+    if (parsedLocal) {
+      const year = parseInt(parsedLocal[1], 10);
+      const month = parseInt(parsedLocal[2], 10);
+      const day = parseInt(parsedLocal[3], 10);
+      const hours = parsedLocal[4] ? parseInt(parsedLocal[4], 10) : 0;
+      const minutes = parsedLocal[5] ? parseInt(parsedLocal[5], 10) : 0;
+      const seconds = parsedLocal[6] ? parseInt(parsedLocal[6], 10) : 0;
+
+      return toTickTickIso(
+        istPartsToDate({
+          year,
+          month,
+          day,
+          hours,
+          minutes,
+          seconds,
+          milliseconds: 0,
+        })
+      );
+    }
+  }
+
+  // Otherwise parse as absolute datetime (if timezone is explicit)
   const parsed = new Date(reminderStr);
   if (!isNaN(parsed.getTime())) {
-    return toIso(parsed);
+    return toTickTickIso(parsed);
   }
 
   throw new Error(`Invalid reminder format: ${reminderStr}. Try '30m', '2h', '9:00', 'tomorrow 9am', or ISO date.`);
 }
 
 function parseDueDate(dueStr: string): string {
-  // Handle relative dates
-  // TickTick expects full ISO datetime like "2026-01-07T23:00:00.000+0000"
-  const now = new Date();
-  const lowerDue = dueStr.toLowerCase();
+  const lowerDue = dueStr.toLowerCase().trim();
+  const nowIst = nowInIstParts();
 
-  // Helper to format as end-of-day ISO string (TickTick needs +0000 not Z)
-  const toEndOfDay = (d: Date): string => {
-    d.setHours(23, 59, 59, 0);
-    return d.toISOString().replace("Z", "+0000");
+  const toIstEndOfDay = (parts: IstParts): string => {
+    return toTickTickIso(
+      istPartsToDate({
+        ...parts,
+        hours: 23,
+        minutes: 59,
+        seconds: 59,
+        milliseconds: 0,
+      })
+    );
   };
 
   if (lowerDue === "today") {
-    return toEndOfDay(now);
+    return toIstEndOfDay(nowIst);
   }
+
   if (lowerDue === "tomorrow") {
-    now.setDate(now.getDate() + 1);
-    return toEndOfDay(now);
+    const tomorrowParts = nowInIstParts(
+      istPartsToDate({
+        ...nowIst,
+        day: nowIst.day + 1,
+        hours: 0,
+        minutes: 0,
+        seconds: 0,
+        milliseconds: 0,
+      })
+    );
+    return toIstEndOfDay(tomorrowParts);
   }
-  if (lowerDue.match(/^in (\d+) days?$/i)) {
-    const match = lowerDue.match(/^in (\d+) days?$/i);
-    if (match) {
-      now.setDate(now.getDate() + parseInt(match[1], 10));
-      return toEndOfDay(now);
-    }
+
+  let match = lowerDue.match(/^in (\d+) days?$/i);
+  if (match) {
+    const days = parseInt(match[1], 10);
+    const targetParts = nowInIstParts(
+      istPartsToDate({
+        ...nowIst,
+        day: nowIst.day + days,
+        hours: 0,
+        minutes: 0,
+        seconds: 0,
+        milliseconds: 0,
+      })
+    );
+    return toIstEndOfDay(targetParts);
   }
-  if (lowerDue.match(/^next (monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i)) {
-    const match = lowerDue.match(/^next (monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i);
-    if (match) {
-      const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-      const targetDay = days.indexOf(match[1].toLowerCase());
-      const currentDay = now.getDay();
-      let daysUntil = targetDay - currentDay;
-      if (daysUntil <= 0) daysUntil += 7;
-      now.setDate(now.getDate() + daysUntil);
-      return toEndOfDay(now);
+
+  match = lowerDue.match(/^next (monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i);
+  if (match) {
+    const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    const targetDay = days.indexOf(match[1].toLowerCase());
+    const currentDay = new Date(Date.now() + IST_OFFSET_MS).getUTCDay();
+    let daysUntil = targetDay - currentDay;
+    if (daysUntil <= 0) daysUntil += 7;
+
+    const targetParts = nowInIstParts(
+      istPartsToDate({
+        ...nowIst,
+        day: nowIst.day + daysUntil,
+        hours: 0,
+        minutes: 0,
+        seconds: 0,
+        milliseconds: 0,
+      })
+    );
+
+    return toIstEndOfDay(targetParts);
+  }
+
+  // Date-only input defaults to IST end-of-day
+  const dateOnly = lowerDue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly) {
+    return toTickTickIso(
+      istPartsToDate({
+        year: parseInt(dateOnly[1], 10),
+        month: parseInt(dateOnly[2], 10),
+        day: parseInt(dateOnly[3], 10),
+        hours: 23,
+        minutes: 59,
+        seconds: 59,
+        milliseconds: 0,
+      })
+    );
+  }
+
+  // Date-time string without timezone: treat as IST
+  if (!hasExplicitTimezone(dueStr)) {
+    const parsedLocal = dueStr.match(
+      /^(\d{4})-(\d{2})-(\d{2})[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?$/
+    );
+
+    if (parsedLocal) {
+      return toTickTickIso(
+        istPartsToDate({
+          year: parseInt(parsedLocal[1], 10),
+          month: parseInt(parsedLocal[2], 10),
+          day: parseInt(parsedLocal[3], 10),
+          hours: parseInt(parsedLocal[4], 10),
+          minutes: parseInt(parsedLocal[5], 10),
+          seconds: parsedLocal[6] ? parseInt(parsedLocal[6], 10) : 0,
+          milliseconds: 0,
+        })
+      );
     }
   }
 
-  // Try parsing as ISO date
+  // Fallback: parse as absolute date-time with explicit timezone
   const parsed = new Date(dueStr);
   if (!isNaN(parsed.getTime())) {
-    return parsed.toISOString().replace("Z", "+0000");
+    return toTickTickIso(parsed);
   }
 
   throw new Error(`Invalid date format: ${dueStr}. Try 'today', 'tomorrow', 'in 3 days', or ISO date.`);
@@ -199,8 +438,24 @@ export async function taskCreateCommand(
     console.log(`✓ Task created: "${task.title}"`);
     console.log(`  ID: ${task.id}`);
     console.log(`  Project: ${project.name}`);
-    if (task.dueDate) {
-      console.log(`  Due: ${new Date(task.dueDate).toLocaleDateString()}`);
+
+    const dueDateToShow = task.dueDate || input.dueDate;
+    if (dueDateToShow) {
+      const dueTime = formatUtcIst(dueDateToShow);
+      console.log(`  Due UTC: ${dueTime.utc}`);
+      console.log(`  Due IST: ${dueTime.ist}`);
+    }
+
+    const remindersToShow = task.reminders && task.reminders.length > 0
+      ? task.reminders
+      : input.reminders;
+
+    if (remindersToShow && remindersToShow.length > 0) {
+      remindersToShow.forEach((reminder, index) => {
+        const reminderTime = formatUtcIst(reminder);
+        console.log(`  Reminder ${index + 1} UTC: ${reminderTime.utc}`);
+        console.log(`  Reminder ${index + 1} IST: ${reminderTime.ist}`);
+      });
     }
   } catch (error) {
     console.error(
@@ -270,6 +525,21 @@ export async function taskUpdateCommand(
 
     console.log(`✓ Task updated: "${updated.title}"`);
     console.log(`  ID: ${updated.id}`);
+
+    const updatedDue = updated.dueDate || input.dueDate;
+    if (updatedDue) {
+      const dueTime = formatUtcIst(updatedDue);
+      console.log(`  Due UTC: ${dueTime.utc}`);
+      console.log(`  Due IST: ${dueTime.ist}`);
+    }
+
+    if (updated.reminders && updated.reminders.length > 0) {
+      updated.reminders.forEach((reminder, index) => {
+        const reminderTime = formatUtcIst(reminder);
+        console.log(`  Reminder ${index + 1} UTC: ${reminderTime.utc}`);
+        console.log(`  Reminder ${index + 1} IST: ${reminderTime.ist}`);
+      });
+    }
   } catch (error) {
     console.error(
       `Error: ${error instanceof Error ? error.message : String(error)}`

@@ -192,7 +192,12 @@ bun run scripts/ticktick.ts task "Doctor appointment" \
 ✓ Task created: "Doctor appointment"
   ID: 69d620d78f08ab5f35b111f4
   Project: Personal
-  Due: 4/9/2026
+  Due UTC: 09 Apr 2026, 18:29:59 UTC
+  Due IST: 09 Apr 2026, 23:59:59 IST
+  Reminder 1 UTC: 09 Apr 2026, 17:59:59 UTC
+  Reminder 1 IST: 09 Apr 2026, 23:29:59 IST
+  Reminder 2 UTC: 09 Apr 2026, 03:30:00 UTC
+  Reminder 2 IST: 09 Apr 2026, 09:00:00 IST
 ```
 
 **All-day task (no time, just date):**
@@ -216,6 +221,14 @@ bun run scripts/ticktick.ts task "Meeting" --list "Work" --due today --json
   "kind": "TASK"
 }
 ```
+
+### Timezone Behavior (Important)
+
+- Default timezone for parsing `--due` and `--reminder` is **IST (Asia/Kolkata)**.
+- Relative inputs (`today`, `tomorrow`, `in N days`, `30m`, `2h`) are computed against current time and emitted as UTC timestamps for the API.
+- Time-only and timezone-less inputs (`9:00`, `9am`, `today 9am`, `2026-04-09 09:00`) are interpreted as IST.
+- Inputs with explicit timezone (`Z`, `+05:30`, `-0400`) are respected as-is.
+- After task create/update (non-JSON mode), CLI prints due/reminder timestamps in both UTC and IST for clarity.
 
 ---
 
@@ -347,6 +360,8 @@ bun run scripts/ticktick.ts task "69d6210e8f08ab5f35b111f4" --update --due tomor
 ```
 ✓ Task updated: "Buy groceries"
   ID: 69d6210e8f08ab5f35b111f4
+  Due UTC: 09 Apr 2026, 18:29:59 UTC
+  Due IST: 09 Apr 2026, 23:59:59 IST
 ```
 
 ---
@@ -419,11 +434,13 @@ bun run scripts/ticktick.ts list "Work" --update --color "#00FF00"
 ### Due Date Formats
 | Format | Example | Result |
 |--------|---------|--------|
-| Relative | `today` | Due today |
-| Relative | `tomorrow` | Due tomorrow |
-| Days from now | `in 3 days` | Due in 3 days |
-| Next weekday | `next monday` | Next Monday |
-| ISO date | `2025-12-25` | Specific date |
+| Relative | `today` | Due today (interpreted in IST) |
+| Relative | `tomorrow` | Due tomorrow (interpreted in IST) |
+| Days from now | `in 3 days` | Due in 3 days (interpreted in IST) |
+| Next weekday | `next monday` | Next Monday (interpreted in IST) |
+| Date-only | `2025-12-25` | End of that day in IST |
+| Datetime (no timezone) | `2025-12-25 09:00` | 9:00 AM IST |
+| Datetime (explicit timezone) | `2025-12-25T09:00:00Z` | Exact provided timezone |
 
 ### Date Filters (for `tasks` command)
 | Filter | Description |
@@ -441,10 +458,12 @@ bun run scripts/ticktick.ts list "Work" --update --color "#00FF00"
 |--------|---------|--------|
 | Minutes from now | `30m` | 30 minutes later |
 | Hours from now | `2h` | 2 hours later |
-| Specific time | `9:00` | Today at 9:00 AM (or tomorrow if passed) |
-| With day | `today 9am` | Today at 9:00 AM |
-| Tomorrow | `tomorrow 9am` | Tomorrow at 9:00 AM |
-| ISO datetime | `2025-12-25T09:00:00` | Exact time |
+| Specific time (IST default) | `9:00` | Today at 9:00 AM IST (or tomorrow if passed) |
+| Specific time (IST default) | `9am` | Today at 9:00 AM IST (or tomorrow if passed) |
+| With day | `today 9am` | Today at 9:00 AM IST |
+| Tomorrow | `tomorrow 9am` | Tomorrow at 9:00 AM IST |
+| Datetime (no timezone) | `2025-12-25 09:00` | 9:00 AM IST |
+| Datetime (explicit timezone) | `2025-12-25T09:00:00Z` | Exact provided timezone |
 
 ---
 
