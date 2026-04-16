@@ -22,6 +22,7 @@ import {
   checklistDeleteCommand,
 } from "./commands/checklist";
 import { moveCommand } from "./commands/move";
+import { columnsCommand } from "./commands/columns";
 import { getTaskCommand } from "./commands/get-task";
 
 const program = new Command();
@@ -133,6 +134,7 @@ program
   )
   .option("-t, --tag <tags...>", "Tags for the task")
   .option("-r, --reminder <times...>", "Reminders: 30m, 2h, 9:00, tomorrow 9am, or ISO date")
+  .option("--column <columnId>", "Kanban column ID to place the task in")
   .option("--all-day", "Mark as all-day task")
   .option("--note", "Create as a note instead of a task (no due date, priority, or reminders)")
   .option("-u, --update", "Update existing task instead of creating")
@@ -154,7 +156,8 @@ program
   .command("move <task>")
   .description("Move a task to a different project")
   .option("-l, --from <name>", "Source project name or ID (optional)")
-  .requiredOption("-t, --to <name>", "Target project name or ID")
+  .option("-t, --to <name>", "Target project name or ID")
+  .option("--column <columnId>", "Target Kanban column ID (moves within same project)")
   .option("--json", "Output as JSON")
   .action(moveCommand);
 
@@ -198,6 +201,13 @@ program
   .description("List all projects")
   .option("--json", "Output as JSON")
   .action(listsCommand);
+
+// Columns command - list Kanban columns in a project
+program
+  .command('columns <project>')
+  .description('List Kanban columns in a project')
+  .option('--json', 'Output as JSON')
+  .action(columnsCommand);
 
 // List command - create or update project
 program

@@ -9,6 +9,7 @@ interface TaskCreateOptions {
   reminder?: string[];
   allDay?: boolean;
   note?: boolean;
+  column?: string;
   json?: boolean;
 }
 
@@ -19,6 +20,7 @@ interface TaskUpdateOptions {
   priority?: string;
   due?: string;
   tag?: string[];
+  column?: string;
   json?: boolean;
 }
 
@@ -428,6 +430,10 @@ export async function taskCreateCommand(
       input.kind = "NOTE";
     }
 
+    if (options.column) {
+      input.columnId = options.column;
+    }
+
     const task = await api.createTask(input);
 
     if (options.json) {
@@ -514,6 +520,10 @@ export async function taskUpdateCommand(
 
     if (options.tag && options.tag.length > 0) {
       input.tags = options.tag;
+    }
+
+    if (options.column) {
+      input.columnId = options.column;
     }
 
     const updated = await api.updateTask(input);
