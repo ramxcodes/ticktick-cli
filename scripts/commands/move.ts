@@ -2,7 +2,8 @@ import { api } from "../api";
 
 interface MoveOptions {
   from?: string;
-  to: string;
+  to?: string;
+  column?: string;
   json?: boolean;
 }
 
@@ -16,8 +17,8 @@ export async function moveCommand(
   options: MoveOptions
 ): Promise<void> {
   try {
-    if (!options.to) {
-      console.error("Error: --to <project> is required");
+    if (!options.to && !options.column) {
+      console.error("Error: --to <project> or --column <columnId> is required");
       process.exit(1);
     }
 
@@ -32,21 +33,39 @@ export async function moveCommand(
     }
 
     if (!found) {
-      console.error(`Task not found: ${taskNameOrId}`);
+      console.error("Task not found: " + taskNameOrId);
       process.exit(1);
     }
 
     const { task, projectId: fromProjectId } = found;
 
-    // Find the target project
-    const targetProject = await api.findProjectByName(options.to);
+    // Column move: update columnId without changing project
+    if (options.column) {
+      const movedTask = await api.updateTask({
+        id: task.id,
+        projectId: fromProjectId,
+        columnId: options.column,
+      });
+
+      if (options.json) {
+        console.log(JSON.stringify(movedTask, null, 2));
+        return;
+      }
+
+      console.log("✓ Task moved to column: " + options.column);
+      console.log("  Task: " + task.title + " (" + task.id + ")");
+      return;
+    }
+
+    // Project move (existing --to behavior)
+    const targetProject = await api.findProjectByName(options.to!);
     if (!targetProject) {
-      console.error(`Target project not found: ${options.to}`);
+      console.error("Target project not found: " + options.to);
       process.exit(1);
     }
 
     if (fromProjectId === targetProject.id) {
-      console.log(`Task "${task.title}" is already in project "${targetProject.name}"`);
+      console.log("Task " + task.title + " is already in project " + targetProject.name + "");
       return;
     }
 
@@ -58,12 +77,12 @@ export async function moveCommand(
       return;
     }
 
-    console.log(`✓ Task moved: "${task.title}"`);
-    console.log(`  From: ${options.from || fromProjectId}`);
-    console.log(`  To: ${targetProject.name}`);
+    console.log("✓ Task moved: " + task.title + "");
+    console.log("  From: " + (options.from || fromProjectId));
+    console.log("  To: " + targetProject.name);
   } catch (error) {
     console.error(
-      `Error: ${error instanceof Error ? error.message : String(error)}`
+      "Error: " + (error instanceof Error ? error.message : String(error))
     );
     process.exit(1);
   }

@@ -30,6 +30,7 @@ export interface Task {
   tags?: string[];
   items?: ChecklistItem[];
   sortOrder?: number;
+  columnId?: string;
   completedTime?: string;
 }
 
@@ -71,6 +72,7 @@ export interface CreateTaskInput {
   isAllDay?: boolean;
   tags?: string[];
   reminders?: string[];
+  columnId?: string;
   kind?: "TASK" | "NOTE";
 }
 
@@ -85,6 +87,7 @@ export interface UpdateTaskInput {
   startDate?: string;
   isAllDay?: boolean;
   tags?: string[];
+  columnId?: string;
 }
 
 export interface BatchDeleteItem {
