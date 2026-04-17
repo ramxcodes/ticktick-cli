@@ -112,7 +112,108 @@ function parseTimePart(timePart: string): { hours: number; minutes: number } | u
   return undefined;
 }
 
-function formatUtcIst(timestamp: string): { utc: string; ist: string } {
+/**
+ * Parse a TRIGGER duration string like "TRIGGER:P0Y0M0DT0H0M0.000S"
+ * Returns the offset in milliseconds from the reference date, or null if unparseable.
+ * Negative trigger means before the reference (e.g. TRIGGER:-P0Y0M0DT0H30M0S = 30 min before).
+ * Zero-duration trigger means "at the task time".
+ */
+function parseTriggerDuration(trigger: string): number | null {
+  const match = trigger.match(/^TRIGGER:([+-]?)P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?([\d.]+)S$/);
+  if (!match) return null;
+
+  const sign = match[1] === "-" ? -1 : 1;
+  const years = parseInt(match[2] || "0", 10);
+  const months = parseInt(match[3] || "0", 10);
+  const days = parseInt(match[4] || "0", 10);
+  const hours = parseInt(match[5] || "0", 10);
+  const minutes = parseInt(match[6] || "0", 10);
+  const seconds = parseFloat(match[7] || "0");
+
+  // Approximate: treat a year as 365.25 days, a month as 30.44 days
+  const totalMs = sign * (
+    (years * 365.25 * 24 * 60 * 60 * 1000) +
+    (months * 30.44 * 24 * 60 * 60 * 1000) +
+    (days * 24 * 60 * 60 * 1000) +
+    (hours * 60 * 60 * 1000) +
+    (minutes * 60 * 1000) +
+    (seconds * 1000)
+  );
+
+  return totalMs;
+}
+
+/**
+ * Human-readable description of a TRIGGER duration string.
+ * E.g. "TRIGGER:-P0Y0M0DT0H30M0.000S" -> "30 minutes before task time"
+ *      "TRIGGER:P0Y0M0DT0H0M0.000S"   -> "At task time"
+ */
+function describeTrigger(trigger: string): string | null {
+  const ms = parseTriggerDuration(trigger);
+  if (ms === null) return null;
+
+  const absMs = Math.abs(ms);
+  const isBefore = ms < 0;
+
+  if (absMs === 0) return "At task time";
+
+  const totalMinutes = Math.round(absMs / (60 * 1000));
+  const totalHours = Math.round(absMs / (60 * 60 * 1000));
+  const totalDays = Math.round(absMs / (24 * 60 * 60 * 1000));
+
+  let desc: string;
+  if (totalMinutes < 60) {
+    desc = `${totalMinutes} minute${totalMinutes !== 1 ? "s" : ""}`;
+  } else if (totalHours < 24) {
+    desc = `${totalHours} hour${totalHours !== 1 ? "s" : ""}`;
+  } else {
+    desc = `${totalDays} day${totalDays !== 1 ? "s" : ""}`;
+  }
+
+  return isBefore ? `${desc} before task time` : `${desc} after task time`;
+}
+
+function formatUtcIst(timestamp: string, dueDate?: string): { utc: string; ist: string } {
+  // Handle TRIGGER format from TickTick API
+  if (timestamp.startsWith("TRIGGER:")) {
+    const description = describeTrigger(timestamp);
+    const durationMs = parseTriggerDuration(timestamp);
+
+    // If we have a due date, compute the actual time
+    if (dueDate && durationMs !== null) {
+      const dueDateObj = new Date(dueDate);
+      if (!isNaN(dueDateObj.getTime())) {
+        const reminderDate = new Date(dueDateObj.getTime() + durationMs);
+        const utc = reminderDate.toLocaleString("en-GB", {
+          timeZone: "UTC",
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        });
+        const ist = reminderDate.toLocaleString("en-GB", {
+          timeZone: "Asia/Kolkata",
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        });
+        const suffix = description ? ` (${description})` : "";
+        return { utc: `${utc} UTC${suffix}`, ist: `${ist} IST${suffix}` };
+      }
+    }
+
+    // Fallback: show description only
+    const label = description || timestamp;
+    return { utc: label, ist: label };
+  }
+
   const date = new Date(timestamp);
   const utc = date.toLocaleString("en-GB", {
     timeZone: "UTC",
@@ -139,7 +240,7 @@ function formatUtcIst(timestamp: string): { utc: string; ist: string } {
   return { utc: `${utc} UTC`, ist: `${ist} IST` };
 }
 
-function parseReminder(reminderStr: string): string {
+function parseReminder(reminderStr: string, dueDateStr?: string): string {
   const now = new Date();
   const nowIst = nowInIstParts(now);
   const lowerReminder = reminderStr.toLowerCase().trim();
@@ -158,10 +259,26 @@ function parseReminder(reminderStr: string): string {
   }
 
   // Time only (interpreted in IST by default)
+  // If a due date is provided, use it as the reference date for the reminder time
   const timeOnly = parseTimePart(reminderStr);
   if (timeOnly) {
+    let referenceIst: IstParts;
+
+    if (dueDateStr) {
+      // Parse the due date to get the reference date parts in IST
+      const dueDate = new Date(dueDateStr);
+      if (!isNaN(dueDate.getTime())) {
+        // Convert the due date UTC to IST parts
+        referenceIst = nowInIstParts(dueDate);
+      } else {
+        referenceIst = nowIst;
+      }
+    } else {
+      referenceIst = nowIst;
+    }
+
     let target: IstParts = {
-      ...nowIst,
+      ...referenceIst,
       hours: timeOnly.hours,
       minutes: timeOnly.minutes,
       seconds: 0,
@@ -169,7 +286,9 @@ function parseReminder(reminderStr: string): string {
     };
 
     let targetDate = istPartsToDate(target);
-    if (targetDate.getTime() <= now.getTime()) {
+
+    // Only auto-advance to tomorrow if we don't have a due date reference
+    if (!dueDateStr && targetDate.getTime() <= now.getTime()) {
       const tomorrowInIst = istPartsToDate({
         ...nowIst,
         day: nowIst.day + 1,
@@ -419,7 +538,9 @@ export async function taskCreateCommand(
 
     if (options.reminder && options.reminder.length > 0) {
       // Parse reminders - can be relative or absolute
-      input.reminders = options.reminder.map(parseReminder);
+      // Pass the due date so time-only reminders (e.g. "19:30") use it as reference
+      const parsedDueDate = options.due ? parseDueDate(options.due) : undefined;
+      input.reminders = options.reminder.map(r => parseReminder(r, parsedDueDate));
     }
 
     if (options.allDay) {
@@ -458,7 +579,7 @@ export async function taskCreateCommand(
 
     if (remindersToShow && remindersToShow.length > 0) {
       remindersToShow.forEach((reminder, index) => {
-        const reminderTime = formatUtcIst(reminder);
+        const reminderTime = formatUtcIst(reminder, dueDateToShow);
         console.log(`  Reminder ${index + 1} UTC: ${reminderTime.utc}`);
         console.log(`  Reminder ${index + 1} IST: ${reminderTime.ist}`);
       });
@@ -544,8 +665,9 @@ export async function taskUpdateCommand(
     }
 
     if (updated.reminders && updated.reminders.length > 0) {
+      const updatedDue = updated.dueDate || input.dueDate;
       updated.reminders.forEach((reminder, index) => {
-        const reminderTime = formatUtcIst(reminder);
+        const reminderTime = formatUtcIst(reminder, updatedDue);
         console.log(`  Reminder ${index + 1} UTC: ${reminderTime.utc}`);
         console.log(`  Reminder ${index + 1} IST: ${reminderTime.ist}`);
       });
