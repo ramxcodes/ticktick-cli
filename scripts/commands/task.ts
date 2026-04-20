@@ -5,6 +5,8 @@ interface TaskCreateOptions {
   content?: string;
   priority?: string;
   due?: string;
+  from?: string;
+  to?: string;
   tag?: string[];
   reminder?: string[];
   allDay?: boolean;
@@ -19,6 +21,8 @@ interface TaskUpdateOptions {
   content?: string;
   priority?: string;
   due?: string;
+  from?: string;
+  to?: string;
   tag?: string[];
   column?: string;
   json?: boolean;
@@ -466,6 +470,49 @@ function parseDueDate(dueStr: string): string {
     );
   }
 
+  // Time-only input (e.g. "2:40pm", "14:30") — interpreted as today in IST
+  const timeOnly = parseTimePart(dueStr);
+  if (timeOnly) {
+    const target = istPartsToDate({
+      ...nowIst,
+      hours: timeOnly.hours,
+      minutes: timeOnly.minutes,
+      seconds: 0,
+      milliseconds: 0,
+    });
+    return toTickTickIso(target);
+  }
+
+  // today/tomorrow + time (e.g. "today 2:40pm", "tomorrow 9am")
+  if (lowerDue.startsWith("today ") || lowerDue.startsWith("tomorrow ")) {
+    const isTomorrow = lowerDue.startsWith("tomorrow ");
+    const timePart = dueStr.substring(isTomorrow ? 9 : 6);
+    const parsedTime = parseTimePart(timePart);
+
+    if (parsedTime) {
+      const base = isTomorrow
+        ? nowInIstParts(istPartsToDate({
+            ...nowIst,
+            day: nowIst.day + 1,
+            hours: 0,
+            minutes: 0,
+            seconds: 0,
+            milliseconds: 0,
+          }))
+        : nowIst;
+
+      return toTickTickIso(
+        istPartsToDate({
+          ...base,
+          hours: parsedTime.hours,
+          minutes: parsedTime.minutes,
+          seconds: 0,
+          milliseconds: 0,
+        })
+      );
+    }
+  }
+
   // Date-time string without timezone: treat as IST
   if (!hasExplicitTimezone(dueStr)) {
     const parsedLocal = dueStr.match(
@@ -532,6 +579,16 @@ export async function taskCreateCommand(
       input.dueDate = parseDueDate(options.due);
     }
 
+    // --from sets startDate (start of time block), --to sets dueDate (end of time block)
+    // --to overrides --due for dueDate when both are present
+    if (options.from) {
+      input.startDate = parseDueDate(options.from);
+    }
+
+    if (options.to) {
+      input.dueDate = parseDueDate(options.to);
+    }
+
     if (options.tag && options.tag.length > 0) {
       input.tags = options.tag;
     }
@@ -539,7 +596,7 @@ export async function taskCreateCommand(
     if (options.reminder && options.reminder.length > 0) {
       // Parse reminders - can be relative or absolute
       // Pass the due date so time-only reminders (e.g. "19:30") use it as reference
-      const parsedDueDate = options.due ? parseDueDate(options.due) : undefined;
+      const parsedDueDate = input.dueDate || (options.due ? parseDueDate(options.due) : undefined);
       input.reminders = options.reminder.map(r => parseReminder(r, parsedDueDate));
     }
 
@@ -565,6 +622,13 @@ export async function taskCreateCommand(
     console.log(`✓ Task created: "${task.title}"`);
     console.log(`  ID: ${task.id}`);
     console.log(`  Project: ${project.name}`);
+
+    const startDateToShow = task.startDate || input.startDate;
+    if (startDateToShow) {
+      const startTime = formatUtcIst(startDateToShow);
+      console.log(`  Start UTC: ${startTime.utc}`);
+      console.log(`  Start IST: ${startTime.ist}`);
+    }
 
     const dueDateToShow = task.dueDate || input.dueDate;
     if (dueDateToShow) {
@@ -639,6 +703,15 @@ export async function taskUpdateCommand(
       input.dueDate = parseDueDate(options.due);
     }
 
+    // --from sets startDate, --to sets dueDate (overrides --due)
+    if (options.from) {
+      input.startDate = parseDueDate(options.from);
+    }
+
+    if (options.to) {
+      input.dueDate = parseDueDate(options.to);
+    }
+
     if (options.tag && options.tag.length > 0) {
       input.tags = options.tag;
     }
@@ -656,6 +729,13 @@ export async function taskUpdateCommand(
 
     console.log(`✓ Task updated: "${updated.title}"`);
     console.log(`  ID: ${updated.id}`);
+
+    const updatedStart = updated.startDate || input.startDate;
+    if (updatedStart) {
+      const startTime = formatUtcIst(updatedStart);
+      console.log(`  Start UTC: ${startTime.utc}`);
+      console.log(`  Start IST: ${startTime.ist}`);
+    }
 
     const updatedDue = updated.dueDate || input.dueDate;
     if (updatedDue) {

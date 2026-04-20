@@ -132,6 +132,8 @@ program
     "-d, --due <date>",
     "Due date: today, tomorrow, 'in N days', or ISO date"
   )
+  .option("--from <date>", "Start time for time block (sets startDate)")
+  .option("--to <date>", "End time for time block (sets dueDate)")
   .option("-t, --tag <tags...>", "Tags for the task")
   .option("-r, --reminder <times...>", "Reminders: 30m, 2h, 9:00, tomorrow 9am, or ISO date")
   .option("--column <columnId>", "Kanban column ID to place the task in")

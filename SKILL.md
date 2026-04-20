@@ -228,6 +228,26 @@ bun run scripts/ticktick.ts task "Doctor appointment" \
   Reminder 2 IST: 09 Apr 2026, 09:00:00 IST
 ```
 
+**Task with time block (calendar slot):**
+```bash
+bun run scripts/ticktick.ts task "Sprint planning" \
+  --list "Work" \
+  --from "2:40pm" \
+  --to "5:00pm"
+```
+**Output:**
+```
+✓ Task created: "Sprint planning"
+  ID: 69d620d78f08ab5f35b111f4
+  Project: Work
+  Start UTC: 20 Apr 2026, 09:10:00 UTC
+  Start IST: 20 Apr 2026, 14:40:00 IST
+  Due UTC: 20 Apr 2026, 11:30:00 UTC
+  Due IST: 20 Apr 2026, 17:00:00 IST
+```
+
+The `--from` flag sets `startDate` and `--to` sets `dueDate`, creating a time block that shows as a slot in calendar view. Both accept the same formats as `--due` plus time-only formats like `2:40pm`, `14:30`, `9am`. When `--to` and `--due` are both provided, `--to` takes precedence.
+
 **All-day task (no time, just date):**
 ```bash
 bun run scripts/ticktick.ts task "Birthday" --list "Personal" --due "2025-06-15" --all-day
@@ -469,6 +489,9 @@ bun run scripts/ticktick.ts list "Work" --update --color "#00FF00"
 | Date-only | `2025-12-25` | End of that day in IST |
 | Datetime (no timezone) | `2025-12-25 09:00` | 9:00 AM IST |
 | Datetime (explicit timezone) | `2025-12-25T09:00:00Z` | Exact provided timezone |
+| Time-only (for --from/--to) | `2:40pm` or `14:30` | Today at that time in IST |
+| Today + time | `today 2:40pm` | Today at 2:40 PM IST |
+| Tomorrow + time | `tomorrow 9am` | Tomorrow at 9:00 AM IST |
 
 ### Date Filters (for `tasks` command)
 | Filter | Description |
@@ -625,6 +648,7 @@ The CLI has built-in retry logic with exponential backoff for rate limit errors.
 | `lists --json` | Get project IDs | JSON array of projects |
 | `tasks --date today --json` | Today's tasks | JSON array of tasks |
 | `get-task "<task-id-or-title>" --json` | Get one task | JSON task object with full `content` |
+| `task "Title" --list "Project" --from "2pm" --to "5pm" --json` | Create time block | JSON task with startDate + dueDate |
 | `task "Title" --list "Project" --json` | Create task | JSON task object |
 | `task "Title" --list "Project" --note --json` | Create note | JSON note object |
 | `complete "Task" --json` | Complete task | JSON success + task info |
