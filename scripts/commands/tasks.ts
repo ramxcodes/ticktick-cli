@@ -10,6 +10,9 @@ interface TasksOptions {
   date?: string;
   grep?: string;
   json?: boolean;
+  fields?: string;
+  limit?: string;
+  sort?: string;
 }
 
 function parseDateFilter(dateStr: string): { start: Date; end: Date } | null {
@@ -169,8 +172,57 @@ export async function tasksCommand(options: TasksOptions): Promise<void> {
       );
     }
 
+    // Sort if specified (before limit, so limit gives top-N of sorted results)
+    if (options.sort) {
+      const [field, dir] = options.sort.split(":");
+      const direction = dir === "desc" ? -1 : 1;
+      filteredTasks.sort((a, b) => {
+        if (field === "title") {
+          return direction * (a.title || "").localeCompare(b.title || "");
+        }
+        let aVal: number, bVal: number;
+        if (field === "priority") {
+          aVal = a.priority ?? 0;
+          bVal = b.priority ?? 0;
+        } else if (field === "created" || field === "sortOrder") {
+          aVal = (a as any).sortOrder ?? 0;
+          bVal = (b as any).sortOrder ?? 0;
+        } else if (field === "dueDate") {
+          const noDate = direction > 0 ? Infinity : -Infinity;
+          aVal = a.dueDate ? new Date(a.dueDate).getTime() : noDate;
+          bVal = b.dueDate ? new Date(b.dueDate).getTime() : noDate;
+        } else if (field === "status") {
+          aVal = a.status ?? 0;
+          bVal = b.status ?? 0;
+        } else {
+          return 0;
+        }
+        return aVal < bVal ? -direction : aVal > bVal ? direction : 0;
+      });
+    }
+
+    // Limit after sort
+    if (options.limit) {
+      const n = parseInt(options.limit, 10);
+      if (!isNaN(n) && n > 0) {
+        filteredTasks = filteredTasks.slice(0, n);
+      }
+    }
+
     if (options.json) {
-      console.log(JSON.stringify(filteredTasks, null, 2));
+      if (options.fields) {
+        const fieldList = options.fields.split(",").map((f) => f.trim());
+        const picked = filteredTasks.map((task) => {
+          const obj: Record<string, unknown> = {};
+          for (const f of fieldList) {
+            if (f in task) obj[f] = (task as Record<string, unknown>)[f];
+          }
+          return obj;
+        });
+        console.log(JSON.stringify(picked, null, 2));
+      } else {
+        console.log(JSON.stringify(filteredTasks, null, 2));
+      }
       return;
     }
 
