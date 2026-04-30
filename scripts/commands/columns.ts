@@ -10,14 +10,6 @@ interface Column {
   sortOrder?: number;
 }
 
-interface ProjectDataWithColumns {
-  project: {
-    id: string;
-    name: string;
-    columns?: Column[];
-  };
-  tasks: unknown[];
-}
 
 export async function columnsCommand(
   projectOrId: string,
@@ -34,7 +26,7 @@ export async function columnsCommand(
     // Get project data which includes columns
     const data = await api.getProjectData(project.id);
 
-    const columns = (data as unknown as ProjectDataWithColumns).project?.columns;
+    const columns = (data as unknown as { columns?: Array<{ id: string; name: string; sortOrder?: number }> }).columns;
 
     if (options.json) {
       console.log(JSON.stringify(columns || [], null, 2));
