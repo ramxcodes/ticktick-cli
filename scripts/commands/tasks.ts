@@ -8,6 +8,7 @@ interface TasksOptions {
   list?: string;
   status?: "pending" | "completed";
   date?: string;
+  grep?: string;
   json?: boolean;
 }
 
@@ -158,6 +159,14 @@ export async function tasksCommand(options: TasksOptions): Promise<void> {
         const taskDate = new Date(t.dueDate);
         return taskDate >= dateRange.start && taskDate <= dateRange.end;
       });
+    }
+
+    // Filter by grep pattern if specified
+    if (options.grep) {
+      const regex = new RegExp(options.grep, "i");
+      filteredTasks = filteredTasks.filter((t) =>
+        regex.test(t.title) || (t.content ? regex.test(t.content) : false)
+      );
     }
 
     if (options.json) {

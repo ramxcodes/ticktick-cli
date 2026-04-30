@@ -161,6 +161,19 @@ Tasks (3):
 ```
 **When to use:** Daily standups, weekly planning, catching up on overdue work.
 
+**Filter tasks by title or content (--grep):**
+```bash
+# Find log entries mentioning "April" in a project
+bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "Log - April"
+
+# Find tasks mentioning "push" (searches title and content, case-insensitive)
+bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "push"
+
+# Combine with --json for machine-readable output
+bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "push" --json
+```
+`--grep` accepts a case-insensitive regex and matches against both the task title and content fields. Works alongside `--list`, `--date`, and `--status`.
+
 ---
 
 ### Workflow 2.5: Get a Single Task (Full Details)
@@ -188,6 +201,25 @@ bun run scripts/ticktick.ts get-task "Websocket server in GO" --list "💻Progra
   "status": 0
 }
 ```
+
+**Print only the content field (no labels, raw text — ideal for piping):**
+```bash
+bun run scripts/ticktick.ts get-task "694eea8a8e991102e9cf90fd" --content-only
+```
+
+**Filter content lines by regex (grep within content):**
+```bash
+# Print only lines matching SLEEP or NUTRITION (case-insensitive)
+bun run scripts/ticktick.ts get-task "Log - April 29" --content-only --grep "SLEEP\|NUTRITION"
+
+# Combine with --grep alone (shows header + filtered content lines)
+bun run scripts/ticktick.ts get-task "694eea8a8e991102e9cf90fd" --grep "push"
+```
+
+`--content-only` and `--grep` are combinable:
+- `--content-only` alone: raw content, no labels
+- `--grep` alone: normal output with only matching content lines shown
+- `--content-only --grep "<pattern>"`: only matching content lines, no labels
 
 ---
 
@@ -647,7 +679,10 @@ The CLI has built-in retry logic with exponential backoff for rate limit errors.
 |---------|---------|--------|
 | `lists --json` | Get project IDs | JSON array of projects |
 | `tasks --date today --json` | Today's tasks | JSON array of tasks |
+| `tasks --list "Project" --grep "pattern"` | Filter tasks by title/content regex | Filtered task list |
 | `get-task "<task-id-or-title>" --json` | Get one task | JSON task object with full `content` |
+| `get-task "<id>" --content-only` | Get raw content field only | Plain text, pipeable |
+| `get-task "<id>" --content-only --grep "pattern"` | Get matching content lines only | Filtered plain text |
 | `task "Title" --list "Project" --from "2pm" --to "5pm" --json` | Create time block | JSON task with startDate + dueDate |
 | `task "Title" --list "Project" --json` | Create task | JSON task object |
 | `task "Title" --list "Project" --note --json` | Create note | JSON note object |

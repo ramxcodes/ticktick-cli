@@ -107,6 +107,7 @@ program
     "-d, --date <date>",
     "Filter by date: today, tomorrow, this week, next week, overdue, or YYYY-MM-DD"
   )
+  .option("--grep <pattern>", "Filter tasks by title or content (case-insensitive regex)")
   .option("--json", "Output as JSON")
   .action(tasksCommand);
 
@@ -115,6 +116,8 @@ program
   .command("get-task <task>")
   .description("Get a single task with full details")
   .option("-l, --list <name>", "Project name or ID to search in")
+  .option("--content-only", "Print only the content field, no labels or other fields")
+  .option("--grep <pattern>", "Filter content lines matching regex (case-insensitive)")
   .option("--json", "Output as JSON")
   .action(getTaskCommand);
 

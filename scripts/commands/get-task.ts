@@ -3,6 +3,8 @@ import { api, type Task } from "../api";
 interface GetTaskOptions {
   list?: string;
   json?: boolean;
+  contentOnly?: boolean;
+  grep?: string;
 }
 
 // Check if string looks like a task ID (24-char hex)
@@ -80,6 +82,19 @@ export async function getTaskCommand(taskNameOrId: string, options: GetTaskOptio
       return;
     }
 
+    // Helper to apply --grep filter to content
+    const applyGrep = (content: string): string => {
+      if (!options.grep) return content;
+      const regex = new RegExp(options.grep, "i");
+      return content.split("\n").filter(line => regex.test(line)).join("\n");
+    };
+
+    // --content-only: print just the (optionally filtered) content and exit
+    if (options.contentOnly) {
+      console.log(applyGrep(task.content ?? ""));
+      return;
+    }
+
     console.log(`Task: ${task.title}`);
     console.log(`ID: ${task.id}`);
     console.log(`Project: ${project?.name || projectId}`);
@@ -106,7 +121,7 @@ export async function getTaskCommand(taskNameOrId: string, options: GetTaskOptio
       console.log(`Reminders: ${reminderLabels.join(", ")}`);
     }
     console.log("Content:");
-    console.log(task.content ?? "");
+    console.log(applyGrep(task.content ?? ""));
   } catch (error) {
     console.error(
       `Error: ${error instanceof Error ? error.message : String(error)}`
