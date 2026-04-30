@@ -526,7 +526,7 @@ fi
 
 ## Configuration
 
-Tokens are stored in `~/.clawdbot/credentials/ticktick-cli/config.json`:
+Tokens are stored in `~/.hermes/credentials/ticktick-cli/config.json`:
 ```json
 {
   "clientId": "YOUR_CLIENT_ID",
@@ -550,10 +550,10 @@ This CLI uses the [TickTick Open API v1](https://developer.ticktick.com/api).
 
 ### Curl Structure (OAuth2)
 
-Use the OAuth token from `~/.clawdbot/credentials/ticktick-cli/config.json`:
+Use the OAuth token from `~/.hermes/credentials/ticktick-cli/config.json`:
 
 ```bash
-TOKEN=$(jq -r '.accessToken' ~/.clawdbot/credentials/ticktick-cli/config.json)
+TOKEN=$(jq -r '.accessToken' ~/.hermes/credentials/ticktick-cli/config.json)
 ```
 
 Core request pattern:
