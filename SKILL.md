@@ -161,6 +161,52 @@ Tasks (3):
 ```
 **When to use:** Daily standups, weekly planning, catching up on overdue work.
 
+**Filter tasks by title or content (--grep):**
+```bash
+# Find log entries mentioning "April" in a project
+bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "Log - April"
+
+# Find tasks mentioning "push" (searches title and content, case-insensitive)
+bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "push"
+
+# Combine with --json for machine-readable output
+bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "push" --json
+```
+`--grep` accepts a case-insensitive regex and matches against both the task title and content fields. Works alongside `--list`, `--date`, and `--status`.
+
+**Limit results (--limit):**
+```bash
+# Get the 5 most recently sorted log entries
+bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "Log - April" --limit 5
+
+# Get 3 tasks due today
+bun run scripts/ticktick.ts tasks --date today --limit 3
+```
+`--limit` caps output to the first N results after all filters and sorting are applied.
+
+**Sort results (--sort):**
+```bash
+# Sort by due date ascending (soonest first)
+bun run scripts/ticktick.ts tasks --list "Work" --sort dueDate:asc
+
+# Sort by priority descending (highest priority first)
+bun run scripts/ticktick.ts tasks --list "Work" --sort priority:desc
+
+# Sort alphabetically by title, descending, then take top 5
+bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "Log - April" --sort title:desc --limit 5
+```
+`--sort` accepts `field:direction`. Valid fields: `title`, `priority`, `dueDate`, `status`, `created` (sortOrder). Direction: `asc` (default) or `desc`. Sort runs before `--limit`, so `--limit N` gives the top-N of the sorted set.
+
+**Select JSON fields (--fields, requires --json):**
+```bash
+# Just id and title
+bun run scripts/ticktick.ts tasks --list "Work" --date today --json --fields id,title
+
+# id, title, and content for matching tasks
+bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "Log - April" --json --fields id,title,content
+```
+`--fields` accepts a comma-separated list of field names. Only those fields are included in each JSON object. Silently ignored when `--json` is not set.
+
 ---
 
 ### Workflow 2.5: Get a Single Task (Full Details)
@@ -188,6 +234,48 @@ bun run scripts/ticktick.ts get-task "Websocket server in GO" --list "💻Progra
   "status": 0
 }
 ```
+
+**Print only the content field (no labels, raw text — ideal for piping):**
+```bash
+bun run scripts/ticktick.ts get-task "694eea8a8e991102e9cf90fd" --content-only
+```
+
+**Filter content lines by regex (grep within content):**
+```bash
+# Print only lines matching SLEEP or NUTRITION (case-insensitive)
+bun run scripts/ticktick.ts get-task "Log - April 29" --content-only --grep "SLEEP\|NUTRITION"
+
+# Combine with --grep alone (shows header + filtered content lines)
+bun run scripts/ticktick.ts get-task "694eea8a8e991102e9cf90fd" --grep "push"
+```
+
+`--content-only` and `--grep` are combinable:
+- `--content-only` alone: raw content, no labels
+- `--grep` alone: normal output with only matching content lines shown
+- `--content-only --grep "<pattern>"`: only matching content lines, no labels
+
+**Extract a markdown section (--section):**
+```bash
+# Get just the SLEEP section from a daily log
+bun run scripts/ticktick.ts get-task "Log - April 29" --content-only --section SLEEP
+
+# Get the NUTRITION section
+bun run scripts/ticktick.ts get-task "Log - April 29" --content-only --section NUTRITION
+
+# Works without --content-only (shows full task header + section content)
+bun run scripts/ticktick.ts get-task "Log - April 29" --section ACTIVITY
+```
+`--section` finds the line `# SECTION` (case-insensitive) and returns all lines until the next `# ` header or end of content. If both `--section` and `--grep` are provided, `--section` takes priority.
+
+**Select JSON fields (--fields, requires --json):**
+```bash
+# Get just id and title
+bun run scripts/ticktick.ts get-task "Log - April 29" --json --fields id,title
+
+# Get id, projectId, and content
+bun run scripts/ticktick.ts get-task "694eea8a8e991102e9cf90fd" --json --fields id,projectId,content
+```
+`--fields` picks only the listed comma-separated fields from the JSON output. Silently ignored when `--json` is not set.
 
 ---
 
@@ -647,7 +735,14 @@ The CLI has built-in retry logic with exponential backoff for rate limit errors.
 |---------|---------|--------|
 | `lists --json` | Get project IDs | JSON array of projects |
 | `tasks --date today --json` | Today's tasks | JSON array of tasks |
+| `tasks --list "Project" --grep "pattern"` | Filter tasks by title/content regex | Filtered task list |
+| `tasks --list "Project" --sort dueDate:asc --limit 5` | Top-5 by due date | Sorted + limited task list |
+| `tasks --list "Project" --json --fields id,title` | JSON with selected fields only | Compact JSON array |
 | `get-task "<task-id-or-title>" --json` | Get one task | JSON task object with full `content` |
+| `get-task "<id>" --json --fields id,title,content` | JSON with selected fields only | Compact JSON object |
+| `get-task "<id>" --content-only` | Get raw content field only | Plain text, pipeable |
+| `get-task "<id>" --content-only --grep "pattern"` | Get matching content lines only | Filtered plain text |
+| `get-task "<id>" --content-only --section SLEEP` | Get lines under `# SLEEP` section | Section plain text |
 | `task "Title" --list "Project" --from "2pm" --to "5pm" --json` | Create time block | JSON task with startDate + dueDate |
 | `task "Title" --list "Project" --json` | Create task | JSON task object |
 | `task "Title" --list "Project" --note --json` | Create note | JSON note object |

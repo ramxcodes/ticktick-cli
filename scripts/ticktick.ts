@@ -107,7 +107,11 @@ program
     "-d, --date <date>",
     "Filter by date: today, tomorrow, this week, next week, overdue, or YYYY-MM-DD"
   )
+  .option("--grep <pattern>", "Filter tasks by title or content (case-insensitive regex)")
   .option("--json", "Output as JSON")
+  .option("--fields <fields>", "Comma-separated fields to include in JSON output (requires --json)")
+  .option("--limit <n>", "Cap results to N tasks (applied after sort)")
+  .option("--sort <field:dir>", "Sort results: field is title|priority|dueDate|status|created, dir is asc|desc")
   .action(tasksCommand);
 
 // Get-task command - fetch one task by id or title
@@ -115,7 +119,11 @@ program
   .command("get-task <task>")
   .description("Get a single task with full details")
   .option("-l, --list <name>", "Project name or ID to search in")
+  .option("--content-only", "Print only the content field, no labels or other fields")
+  .option("--grep <pattern>", "Filter content lines matching regex (case-insensitive)")
+  .option("--section <header>", "Extract lines under a specific markdown section header (# HEADER)")
   .option("--json", "Output as JSON")
+  .option("--fields <fields>", "Comma-separated fields to include in JSON output (requires --json)")
   .action(getTaskCommand);
 
 // Task command - create or update task with reminders and all-day support

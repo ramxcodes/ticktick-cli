@@ -3,6 +3,10 @@ import { api, type Task } from "../api";
 interface GetTaskOptions {
   list?: string;
   json?: boolean;
+  contentOnly?: boolean;
+  grep?: string;
+  fields?: string;
+  section?: string;
 }
 
 // Check if string looks like a task ID (24-char hex)
@@ -56,6 +60,27 @@ function describeTriggerForGetTask(trigger: string): string | null {
   return isBefore ? `${desc} before task time` : `${desc} after task time`;
 }
 
+/**
+ * Extract lines belonging to a markdown section (# HEADER ... next # HEADER).
+ * Match is case-insensitive against the section name only.
+ */
+function extractSection(content: string, sectionName: string): string {
+  const lines = content.split("\n");
+  // Match "# SECTION" optionally followed by anything (e.g. "# WORKOUT - SKIPPED")
+  const headerRegex = new RegExp(`^#\\s+${sectionName}(?:\\s|$)`, "i");
+  let inSection = false;
+  const result: string[] = [];
+  for (const line of lines) {
+    if (inSection) {
+      if (/^#\s/.test(line)) break;
+      result.push(line);
+    } else if (headerRegex.test(line)) {
+      inSection = true;
+    }
+  }
+  return result.join("\n");
+}
+
 export async function getTaskCommand(taskNameOrId: string, options: GetTaskOptions): Promise<void> {
   try {
     let found: { task: Task; projectId: string } | undefined;
@@ -76,7 +101,32 @@ export async function getTaskCommand(taskNameOrId: string, options: GetTaskOptio
     const project = projects.find((p) => p.id === projectId);
 
     if (options.json) {
-      console.log(JSON.stringify({ ...task, projectName: project?.name || projectId }, null, 2));
+      const taskObj: Record<string, unknown> = { ...task, projectName: project?.name || projectId };
+      if (options.fields) {
+        const fieldList = options.fields.split(",").map((f) => f.trim());
+        const picked: Record<string, unknown> = {};
+        for (const f of fieldList) {
+          if (f in taskObj) picked[f] = taskObj[f];
+        }
+        console.log(JSON.stringify(picked, null, 2));
+      } else {
+        console.log(JSON.stringify(taskObj, null, 2));
+      }
+      return;
+    }
+
+    // Helper to apply --section or --grep filter to content.
+    // --section takes priority over --grep if both are provided.
+    const applyContentFilter = (content: string): string => {
+      if (options.section) return extractSection(content, options.section);
+      if (!options.grep) return content;
+      const regex = new RegExp(options.grep, "i");
+      return content.split("\n").filter(line => regex.test(line)).join("\n");
+    };
+
+    // --content-only: print just the (optionally filtered) content and exit
+    if (options.contentOnly) {
+      console.log(applyContentFilter(task.content ?? ""));
       return;
     }
 
@@ -106,7 +156,7 @@ export async function getTaskCommand(taskNameOrId: string, options: GetTaskOptio
       console.log(`Reminders: ${reminderLabels.join(", ")}`);
     }
     console.log("Content:");
-    console.log(task.content ?? "");
+    console.log(applyContentFilter(task.content ?? ""));
   } catch (error) {
     console.error(
       `Error: ${error instanceof Error ? error.message : String(error)}`
