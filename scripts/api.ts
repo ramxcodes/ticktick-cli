@@ -32,6 +32,7 @@ export interface Task {
   sortOrder?: number;
   columnId?: string;
   completedTime?: string;
+  parentId?: string;
 }
 
 export interface ChecklistItem {
@@ -81,6 +82,7 @@ export interface CreateTaskInput {
   reminders?: string[];
   columnId?: string;
   kind?: "TASK" | "NOTE";
+  parentId?: string;
 }
 
 export interface UpdateTaskInput {

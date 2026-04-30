@@ -24,6 +24,7 @@ import {
 import { moveCommand } from "./commands/move";
 import { columnsCommand } from "./commands/columns";
 import { getTaskCommand } from "./commands/get-task";
+import { subtaskListCommand, subtaskAddCommand, subtaskCompleteCommand } from "./commands/subtask";
 
 const program = new Command();
 
@@ -211,6 +212,29 @@ program
   .description("List all projects")
   .option("--json", "Output as JSON")
   .action(listsCommand);
+
+// Subtask commands
+const subtaskCmd = program.command('subtask').description('Manage sub-tasks (child tasks)');
+
+subtaskCmd.command('list <task>').description('List sub-tasks of a parent task')
+  .option('-l, --list <name>', 'Project name or ID to search in')
+  .option('--json', 'Output as JSON')
+  .action(subtaskListCommand);
+
+subtaskCmd.command('add <task> <title>').description('Add a sub-task to a parent task')
+  .option('-l, --list <name>', 'Project name or ID to search in')
+  .option('-c, --content <desc>', 'Sub-task description')
+  .option('-p, --priority <level>', 'Priority: none, low, medium, high')
+  .option('-d, --due <date>', 'Due date')
+  .option('-t, --tag <tags...>', 'Tags')
+  .option('--column <columnId>', 'Kanban column ID')
+  .option('--json', 'Output as JSON')
+  .action(subtaskAddCommand);
+
+subtaskCmd.command('complete <task> <subtask>').description('Complete a sub-task')
+  .option('-l, --list <name>', 'Project name or ID to search in')
+  .option('--json', 'Output as JSON')
+  .action(subtaskCompleteCommand);
 
 // Columns command - list Kanban columns in a project
 program
