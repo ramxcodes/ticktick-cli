@@ -1,6 +1,6 @@
 ---
 name: ticktick
-description: Manage TickTick tasks and projects from the command line with OAuth2 auth, batch operations, rate limit handling, checklist items, reminders, task moving, and date filtering.
+description: Manage TickTick tasks and projects from the command line with OAuth2 auth, batch operations, rate limit handling, checklist items, sub-tasks, reminders, task moving, and date filtering.
 ---
 
 # TickTick CLI Skill
@@ -591,7 +591,40 @@ Project names with emoji prefixes (e.g. "💼Work - ASBL") are matched via subst
 
 ---
 
-### Workflow 11: Practical Usage Patterns
+### Workflow 11: Sub-Tasks
+
+Sub-tasks are regular TickTick tasks with a `parentId` referencing a parent task. Used by the Linear sync to nest sub-issues.
+
+**List sub-tasks of a parent:**
+```bash
+bun run scripts/ticktick.ts subtask list "EREV-454: Migrate ASBL-v3 to web-monorepo"
+```
+**Output:**
+```
+Sub-tasks of "EREV-454: Migrate ASBL-v3 to web-monorepo" (3):
+
+pending [69f33400] EREV-457: Deploy on stage
+pending [69f33401] EREV-456: Shift env to aws secret manager
+pending [69f33402] EREV-455: Migrate ASBL-v3 code
+```
+
+**Add a sub-task:**
+```bash
+bun run scripts/ticktick.ts subtask add "EREV-454" "New sub-task title" --priority high --column "6965f27620120f7fdb8d5d96"
+```
+
+**Complete a sub-task:**
+```bash
+bun run scripts/ticktick.ts subtask complete "EREV-454" "EREV-457"
+```
+
+All subtask commands accept task ID (24-char hex) or title, and `--list` for project scoping. `--json` for machine-readable output.
+
+**When to use:** Nesting child tasks under a parent. The Linear-to-TickTick sync creates these automatically from Linear sub-issues.
+
+---
+
+### Workflow 12: Practical Usage Patterns
 
 **Pattern 1 -- Find and move a task to a kanban column:**
 ```bash
@@ -802,8 +835,11 @@ The CLI has built-in retry logic with exponential backoff for rate limit errors.
 | `task "Title" --list "Project" --json` | Create task | JSON task object |
 | `task "Title" --list "Project" --note --json` | Create note | JSON note object |
 | `complete "Task" --json` | Complete task | JSON success + task info |
-| `checklist add "Task" "Item"` | Add sub-task | Item ID + confirmation |
-|| `move "Task" --to "Project" --json` | Move task | JSON updated task |
+| `subtask list "Task"` | List sub-tasks | Sub-task list with status |
+| `subtask add "Task" "Title"` | Create sub-task | Sub-task ID + confirmation |
+| `subtask complete "Task" "Sub"` | Complete sub-task | JSON updated sub-task |
+| `checklist add "Task" "Item"` | Add checklist item | Item ID + confirmation |
+| `move "Task" --to "Project" --json` | Move task | JSON updated task |
 || `columns "Project"` | List kanban columns | Column list with IDs |
 || `columns "Project" --json` | Columns as JSON | JSON array with ids, names, sortOrders |
 || `tasks --date overdue --json` | Get overdue | JSON array for triage |
