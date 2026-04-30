@@ -557,6 +557,61 @@ bun run scripts/ticktick.ts list "Work" --update --color "#00FF00"
 
 ---
 
+### Workflow 10: Kanban Columns
+
+**List columns by project name (substring match supported):**
+```bash
+bun run scripts/ticktick.ts columns "Work - ASBL"
+```
+**Output:**
+```
+Columns in "💼Work - ASBL" (7):
+  • To-Do
+    id: 6965f1fe20120f7fdb8d5d71
+  • In progress
+    id: 6965f27620120f7fdb8d5d96
+  ...
+```
+
+**List columns by project ID:**
+```bash
+bun run scripts/ticktick.ts columns "6965f1b020120f7fdb8d5d35" --json
+```
+**Output:**
+```json
+[
+  { "id": "6965f1fe20120f7fdb8d5d71", "name": "To-Do", "sortOrder": -1 },
+  { "id": "6965f27620120f7fdb8d5d96", "name": "In progress", "sortOrder": 65535 }
+]
+```
+
+Project names with emoji prefixes (e.g. "💼Work - ASBL") are matched via substring, so "Work - ASBL" or just "ASBL" works.
+
+**When to use:** Getting column IDs for task creation, move operations, or sync scripts.
+
+---
+
+### Workflow 11: Practical Usage Patterns
+
+**Pattern 1 -- Find and move a task to a kanban column:**
+```bash
+# Get tasks from a project, find one, move it to a different column
+TASK_ID=$(bun run scripts/ticktick.ts tasks --list "Work - ASBL" --grep "EREV-397" --json --fields id | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
+bun run scripts/ticktick.ts move "$TASK_ID" --from "Work - ASBL" --column "69f3271b12f41102956c549d"
+```
+
+**Pattern 2 -- Get today's pending tasks as a quick summary:**
+```bash
+bun run scripts/ticktick.ts tasks --date today --status pending --limit 10 --sort priority:desc
+```
+
+**Pattern 3 -- Extract a section from a daily log for piping into another tool:**
+```bash
+bun run scripts/ticktick.ts get-task "Log - April 30" --content-only --section NUTRITION | claude -p "Summarize today's nutrition and check if calories are balanced." --max-turns 3 --output-format json
+```
+
+---
+
 ## Options Reference
 
 ### Priority Levels
@@ -748,5 +803,7 @@ The CLI has built-in retry logic with exponential backoff for rate limit errors.
 | `task "Title" --list "Project" --note --json` | Create note | JSON note object |
 | `complete "Task" --json` | Complete task | JSON success + task info |
 | `checklist add "Task" "Item"` | Add sub-task | Item ID + confirmation |
-| `move "Task" --to "Project" --json` | Move task | JSON updated task |
-| `tasks --date overdue --json` | Get overdue | JSON array for triage |
+|| `move "Task" --to "Project" --json` | Move task | JSON updated task |
+|| `columns "Project"` | List kanban columns | Column list with IDs |
+|| `columns "Project" --json` | Columns as JSON | JSON array with ids, names, sortOrders |
+|| `tasks --date overdue --json` | Get overdue | JSON array for triage |
