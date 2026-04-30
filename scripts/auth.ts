@@ -6,7 +6,7 @@ import { randomBytes } from "crypto";
 import { existsSync } from "fs";
 import open from "open";
 
-const CONFIG_DIR = join(homedir(), ".clawdbot", "credentials", "ticktick-cli");
+const CONFIG_DIR = join(homedir(), ".hermes", "credentials", "ticktick-cli");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
 const OAUTH_BASE = "https://ticktick.com/oauth";
