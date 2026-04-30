@@ -57,9 +57,16 @@ export interface UpdateChecklistItemInput {
   sortOrder?: number;
 }
 
+export interface Column {
+  id: string;
+  name: string;
+  sortOrder?: number;
+}
+
 export interface ProjectData {
   project: Project;
   tasks: Task[];
+  columns?: Column[];
 }
 
 export interface CreateTaskInput {
@@ -388,9 +395,13 @@ class TickTickAPI {
   async findProjectByName(name: string): Promise<Project | undefined> {
     const projects = await this.listProjects();
     const lowerName = name.toLowerCase();
-    return projects.find(
+    // Exact match first
+    const exact = projects.find(
       (p) => p.name.toLowerCase() === lowerName || p.id === name
     );
+    if (exact) return exact;
+    // Fallback: substring match (handles emoji prefixes like "💼Work - ASBL")
+    return projects.find((p) => p.name.toLowerCase().includes(lowerName));
   }
 
   async findTaskById(taskId: string): Promise<{ task: Task; projectId: string } | undefined> {
