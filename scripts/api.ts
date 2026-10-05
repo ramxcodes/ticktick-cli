@@ -293,6 +293,42 @@ class TickTickAPI {
     await this.request<void>(`/project/${projectId}/task/${taskId}/complete`, {
       method: "POST",
     });
+    // The /complete endpoint can return 200 without completing the task
+    // (observed on dida365.com). Verify the outcome; if the task is still
+    // open, fall back to a full-object status update, which both APIs honor.
+    try {
+      if ((await this.getTaskStatus(projectId, taskId)) === 2) return;
+      const data = await this.getProjectData(projectId);
+      const task = data.tasks?.find((t) => t.id === taskId);
+      if (task) {
+        await this.request<Task>(`/task/${taskId}`, {
+          method: "POST",
+          body: JSON.stringify({ ...task, status: 2 }),
+        });
+      }
+      if ((await this.getTaskStatus(projectId, taskId)) !== 2) {
+        throw new Error(
+          `Task ${taskId} could not be completed: the API accepted the request but the task is still open.`
+        );
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith("Task ")) throw e;
+      // Verification itself failed (e.g. transient read error); /complete
+      // returned 200, so keep the previous behavior instead of failing.
+      console.error(
+        `Warning: could not verify completion of task ${taskId}: ${e instanceof Error ? e.message : e}`
+      );
+    }
+  }
+
+  private async getTaskStatus(
+    projectId: string,
+    taskId: string
+  ): Promise<number | undefined> {
+    const task = await this.request<Task>(
+      `/project/${projectId}/task/${taskId}`
+    );
+    return task?.status;
   }
 
   async deleteTask(projectId: string, taskId: string): Promise<void> {
