@@ -1,845 +1,151 @@
 ---
 name: ticktick
-description: Manage TickTick tasks and projects from the command line with OAuth2 auth, batch operations, rate limit handling, checklist items, sub-tasks, reminders, task moving, and date filtering.
+description: Read and change TickTick tasks, projects, checklists, and calendar through the ticktick v2 CLI (official Open API). Use for listing open, completed, or abandoned tasks, building an agenda or free/busy view, and safely creating, updating, completing, moving, or deleting tasks with verified, idempotent writes.
 ---
 
-# TickTick CLI Skill
+# TickTick CLI v2 — agent guide
 
-Manage TickTick tasks and projects from the command line.
+Always run commands with `--json`. Stdout then holds exactly one envelope. Read `ok` first,
+then `meta.coverage`, then `meta.warnings`.
 
-## Setup
-
-### 1. Register a TickTick Developer App
-
-1. Go to [TickTick Developer Center](https://developer.ticktick.com/manage)
-2. Create a new application
-3. Set the redirect URI to `http://localhost:8080`
-4. Note your `Client ID` and `Client Secret`
-
-### 2. Authenticate
-
-**For interactive use (opens browser automatically):**
-```bash
-bun run scripts/ticktick.ts auth --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET
-```
-
-**For headless servers (manual OAuth flow):**
-```bash
-bun run scripts/ticktick.ts auth --client-id YOUR_CLIENT_ID --client-secret YOUR_CLIENT_SECRET --manual
-```
-**Output:**
-```
-Credentials saved successfully.
-
-=== Manual Authentication ===
-
-1. Open this URL in your browser:
-
-https://ticktick.com/oauth/authorize?scope=tasks:read%20tasks:write&client_id=...&state=...&redirect_uri=http%3A%2F%2Flocalhost%3A8080&response_type=code
-
-2. Authorize the app
-3. You'll be redirected to a URL like: http://localhost:8080/?code=XXXXX&state=STATE
-4. Copy that ENTIRE redirect URL and paste it below:
-
-Paste redirect URL: http://localhost:8080/?code=ABC123&state=...
-
-Exchanging code for tokens...
-
-✓ Authentication successful! Tokens saved.
-```
-
-**Check authentication status:**
-```bash
-bun run scripts/ticktick.ts auth --status
-```
-**Output:**
-```
-✓ Authenticated with TickTick
-```
-
-**Logout (keeps credentials, clears tokens):**
-```bash
-bun run scripts/ticktick.ts auth --logout
-```
-**Output:**
-```
-Logged out successfully. Credentials preserved.
-```
-
----
-
-## Core Workflows for AI Agents
-
-### Workflow 1: Get Project IDs First
-**Always start here when working with projects/tasks.**
-```bash
-bun run scripts/ticktick.ts lists --json
-```
-**Output:**
 ```json
-[
-  {
-    "id": "69d0de048f08bed5709498e5",
-    "name": "Test Project 1",
-    "color": "#FF5733"
-  },
-  {
-    "id": "69d0de048f08bed5709498e6",
-    "name": "🏋Body & Health",
-    "color": "#F9A825"
-  }
-]
-```
-**When to use:** Before creating/moving tasks, when you need to reference a project by ID rather than name for reliability.
-
----
-
-### Workflow 2: List Tasks with Filters
-
-**List all tasks (human-readable):**
-```bash
-bun run scripts/ticktick.ts tasks
-```
-**Output:**
+{ "ok": true,  "data": ..., "meta": { "coverage": "complete|partial|unknown", "timezone": "Asia/Kolkata", "warnings": [], "requests": {...} } }
+{ "ok": false, "error": { "code": "AMBIGUOUS", "message": "...", "details": {...} }, "meta": {...} }
 ```
 
-Tasks (15):
+Check setup once with `ticktick doctor --json`. If it reports `AUTH_REQUIRED`, ask the user
+for a personal API token (TickTick → Settings → Account → API Token). Then run
+`printf '%s' "$TOKEN" | ticktick auth token`, or set `TICKTICK_TOKEN`.
 
-○ [69d620d7] !!! Important task - due tomorrow
-○ [69d6210e] Regular task
-○ [69d62153] Overdue test task - due Jan 1
-✓ [69d43947] Completed task
-```
+## Rules
 
-**List tasks from a specific project:**
-```bash
-bun run scripts/ticktick.ts tasks --list "Test Project 1" --json
-```
-**Output:**
-```json
-[
-  {
-    "id": "69d621538f08bed57094c296",
-    "projectId": "69d620ca8f08bed5709498e5",
-    "title": "Overdue test task",
-    "status": 0,
-    "priority": 0,
-    "dueDate": "2025-01-01T23:59:59.000+0000"
-  }
-]
-```
-**When to use:** To find tasks in a project, check task IDs before updating/completing.
+1. **Read before you write.** Get the task with `task get <id> --json` or `tasks list --json`
+   before you change it. Keep its `id` and `etag`.
+2. **Use ids.** After the first lookup, refer to tasks and projects by their 24-character id.
+   Titles are accepted only when exactly one open task matches. Otherwise you get `AMBIGUOUS`
+   with `error.details.candidates`. Pick one with the user. Never guess.
+3. **Check coverage before you draw a conclusion.** "No tasks", "free at 3pm", or "nothing was
+   completed" is only true when `ok` is true and `meta.coverage` is `complete`. With `partial`
+   or `unknown`, say the answer may be incomplete and repeat the reason from `meta.warnings`.
+4. **Missing does not mean completed.** A task can leave the open list because it was
+   completed, abandoned, deleted, or moved. Only `task get <id>` says which. Its `state` is
+   `open`, `completed`, `abandoned`, or `deleted_or_unknown`. `NOT_FOUND` means not found, not
+   done. `completedTime` alone does not prove completion. Use `status`/`state`.
+5. **Deadlines are not busy time.** In `agenda`, only entries with `blocksTime: true`
+   (kind `interval`) occupy time. Deadlines, points, and all-day tasks do not block hours.
+   For availability, use `data.busy` and `data.conflicts`.
+6. **Recurrence is partly calculated.** An entry with `occurrence.source: "calculated"` is
+   predicted from the RRULE. TickTick does not expose skipped or edited occurrences, so tell
+   the user these dates may be wrong. Series in `recurrence.unsupportedSeries` were not
+   expanded at all.
+7. **Verify every write.** A write is done only when `ok` is true. `VERIFY_FAILED` means the
+   request reached TickTick but the result differs: read the task again and report it.
+   `BATCH_PARTIAL_FAILURE` lists each task in `error.details.results`.
+8. **Never repeat an uncertain write.** On `UNCERTAIN_WRITE`, the change may or may not have
+   happened. Check first (`task get`, `tasks list --search`), or use `ops show <op-id>` if you
+   passed `--op-id`. Then `ops resolve <op-id> --task <id>` or `--not-applied`.
+9. **Use `--op-id` for automation.** Give creates (and completes of recurring tasks) a stable
+   key, for example `--op-id daily-plan-2026-10-28-standup`. Running the same key again
+   returns `replayed: true` and writes nothing. A different request with the same key fails
+   with `OP_ID_CONFLICT`. `REMOTE_MISSING` means the task created earlier is gone. Do not
+   recreate it unless the user asks.
+10. **Do not overwrite manual work.** Pass `--if-etag <etag>` from your last read. `CONFLICT`
+    means someone changed the task: read it again and ask before you continue. Never delete
+    or replace tasks you did not create unless the user explicitly asks.
+11. **Preview risky changes** with `--dry-run`. It prints the exact requests and sends no write.
+12. **Stop on `UNSUPPORTED_CAPABILITY`**, explain the limitation, and do not work around it.
 
-**Filter by status:**
-```bash
-bun run scripts/ticktick.ts tasks --status pending
-bun run scripts/ticktick.ts tasks --status completed
-```
-
-**Filter by date (powerful for daily workflows):**
-```bash
-# Today's tasks
-bun run scripts/ticktick.ts tasks --date today
-
-# Overdue tasks (catch up)
-bun run scripts/ticktick.ts tasks --date overdue
-
-# This week's tasks (planning)
-bun run scripts/ticktick.ts tasks --date "this week"
-
-# Specific date
-bun run scripts/ticktick.ts tasks --date 2025-12-25
-```
-**Output:**
-```
-
-Tasks (3):
-
-○ [69d62153] Task due today
-○ [69d620d7] Another task - due today
-○ [69d6210e] Third task - due tomorrow
-```
-**When to use:** Daily standups, weekly planning, catching up on overdue work.
-
-**Filter tasks by title or content (--grep):**
-```bash
-# Find log entries mentioning "April" in a project
-bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "Log - April"
-
-# Find tasks mentioning "push" (searches title and content, case-insensitive)
-bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "push"
-
-# Combine with --json for machine-readable output
-bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "push" --json
-```
-`--grep` accepts a case-insensitive regex and matches against both the task title and content fields. Works alongside `--list`, `--date`, and `--status`.
-
-**Limit results (--limit):**
-```bash
-# Get the 5 most recently sorted log entries
-bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "Log - April" --limit 5
-
-# Get 3 tasks due today
-bun run scripts/ticktick.ts tasks --date today --limit 3
-```
-`--limit` caps output to the first N results after all filters and sorting are applied.
-
-**Sort results (--sort):**
-```bash
-# Sort by due date ascending (soonest first)
-bun run scripts/ticktick.ts tasks --list "Work" --sort dueDate:asc
-
-# Sort by priority descending (highest priority first)
-bun run scripts/ticktick.ts tasks --list "Work" --sort priority:desc
-
-# Sort alphabetically by title, descending, then take top 5
-bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "Log - April" --sort title:desc --limit 5
-```
-`--sort` accepts `field:direction`. Valid fields: `title`, `priority`, `dueDate`, `status`, `created` (sortOrder). Direction: `asc` (default) or `desc`. Sort runs before `--limit`, so `--limit N` gives the top-N of the sorted set.
-
-**Select JSON fields (--fields, requires --json):**
-```bash
-# Just id and title
-bun run scripts/ticktick.ts tasks --list "Work" --date today --json --fields id,title
-
-# id, title, and content for matching tasks
-bun run scripts/ticktick.ts tasks --list "🏋Body and Health" --grep "Log - April" --json --fields id,title,content
-```
-`--fields` accepts a comma-separated list of field names. Only those fields are included in each JSON object. Silently ignored when `--json` is not set.
-
----
-
-### Workflow 2.5: Get a Single Task (Full Details)
-
-Use this when you need one task by ID or exact title.
+## Read
 
 ```bash
-# By task ID (most reliable)
-bun run scripts/ticktick.ts get-task "694eea8a8e991102e9cf90fd" --json
-
-# By exact title (search across projects)
-bun run scripts/ticktick.ts get-task "Websocket server in GO" --json
-
-# By title within a specific project
-bun run scripts/ticktick.ts get-task "Websocket server in GO" --list "💻Programming" --json
-```
-
-**Output (JSON includes full content, unmasked):**
-```json
-{
-  "id": "694eea8a8e991102e9cf90fd",
-  "projectId": "6898e9e5a94951605d41d231",
-  "title": "Websocket server in GO",
-  "content": "full raw content here",
-  "status": 0
-}
-```
-
-**Print only the content field (no labels, raw text — ideal for piping):**
-```bash
-bun run scripts/ticktick.ts get-task "694eea8a8e991102e9cf90fd" --content-only
-```
-
-**Filter content lines by regex (grep within content):**
-```bash
-# Print only lines matching SLEEP or NUTRITION (case-insensitive)
-bun run scripts/ticktick.ts get-task "Log - April 29" --content-only --grep "SLEEP\|NUTRITION"
-
-# Combine with --grep alone (shows header + filtered content lines)
-bun run scripts/ticktick.ts get-task "694eea8a8e991102e9cf90fd" --grep "push"
-```
-
-`--content-only` and `--grep` are combinable:
-- `--content-only` alone: raw content, no labels
-- `--grep` alone: normal output with only matching content lines shown
-- `--content-only --grep "<pattern>"`: only matching content lines, no labels
-
-**Extract a markdown section (--section):**
-```bash
-# Get just the SLEEP section from a daily log
-bun run scripts/ticktick.ts get-task "Log - April 29" --content-only --section SLEEP
-
-# Get the NUTRITION section
-bun run scripts/ticktick.ts get-task "Log - April 29" --content-only --section NUTRITION
-
-# Works without --content-only (shows full task header + section content)
-bun run scripts/ticktick.ts get-task "Log - April 29" --section ACTIVITY
-```
-`--section` finds the line `# SECTION` (case-insensitive) and returns all lines until the next `# ` header or end of content. If both `--section` and `--grep` are provided, `--section` takes priority.
-
-**Select JSON fields (--fields, requires --json):**
-```bash
-# Get just id and title
-bun run scripts/ticktick.ts get-task "Log - April 29" --json --fields id,title
-
-# Get id, projectId, and content
-bun run scripts/ticktick.ts get-task "694eea8a8e991102e9cf90fd" --json --fields id,projectId,content
-```
-`--fields` picks only the listed comma-separated fields from the JSON output. Silently ignored when `--json` is not set.
-
----
-
-### Workflow 3: Create Tasks
-
-**Simple task:**
-```bash
-bun run scripts/ticktick.ts task "Buy groceries" --list "Personal"
-```
-**Output:**
-```
-✓ Task created: "Buy groceries"
-  ID: 69d620d78f08ab5f35b111f4
-  Project: Personal
-```
-
-**Task with all options:**
-```bash
-bun run scripts/ticktick.ts task "Doctor appointment" \
-  --list "Personal" \
-  --due tomorrow \
-  --priority high \
-  --content "Dr. Smith at General Hospital" \
-  --tag health important \
-  --reminder "30m" \
-  --reminder "tomorrow 9am"
-```
-**Output:**
-```
-✓ Task created: "Doctor appointment"
-  ID: 69d620d78f08ab5f35b111f4
-  Project: Personal
-  Due UTC: 09 Apr 2026, 18:29:59 UTC
-  Due IST: 09 Apr 2026, 23:59:59 IST
-  Reminder 1 UTC: 09 Apr 2026, 17:59:59 UTC
-  Reminder 1 IST: 09 Apr 2026, 23:29:59 IST
-  Reminder 2 UTC: 09 Apr 2026, 03:30:00 UTC
-  Reminder 2 IST: 09 Apr 2026, 09:00:00 IST
-```
-
-**Task with time block (calendar slot):**
-```bash
-bun run scripts/ticktick.ts task "Sprint planning" \
-  --list "Work" \
-  --from "2:40pm" \
-  --to "5:00pm"
-```
-**Output:**
-```
-✓ Task created: "Sprint planning"
-  ID: 69d620d78f08ab5f35b111f4
-  Project: Work
-  Start UTC: 20 Apr 2026, 09:10:00 UTC
-  Start IST: 20 Apr 2026, 14:40:00 IST
-  Due UTC: 20 Apr 2026, 11:30:00 UTC
-  Due IST: 20 Apr 2026, 17:00:00 IST
-```
-
-The `--from` flag sets `startDate` and `--to` sets `dueDate`, creating a time block that shows as a slot in calendar view. Both accept the same formats as `--due` plus time-only formats like `2:40pm`, `14:30`, `9am`. When `--to` and `--due` are both provided, `--to` takes precedence.
-
-**All-day task (no time, just date):**
-```bash
-bun run scripts/ticktick.ts task "Birthday" --list "Personal" --due "2025-06-15" --all-day
-```
-
-**Get JSON output for programmatic use:**
-```bash
-bun run scripts/ticktick.ts task "Meeting" --list "Work" --due today --json
-```
-**Output:**
-```json
-{
-  "id": "69d622418f08bed57094c296",
-  "projectId": "69d620ca8f08bed5709498e5",
-  "title": "Meeting",
-  "status": 0,
-  "priority": 0,
-  "dueDate": "2026-04-08T23:59:59.000+0000",
-  "kind": "TASK"
-}
-```
-
-### Timezone Behavior (Important)
-
-- Default timezone for parsing `--due` and `--reminder` is **IST (Asia/Kolkata)**.
-- Relative inputs (`today`, `tomorrow`, `in N days`, `30m`, `2h`) are computed against current time and emitted as UTC timestamps for the API.
-- Time-only and timezone-less inputs (`9:00`, `9am`, `today 9am`, `2026-04-09 09:00`) are interpreted as IST.
-- Inputs with explicit timezone (`Z`, `+05:30`, `-0400`) are respected as-is.
-- After task create/update (non-JSON mode), CLI prints due/reminder timestamps in both UTC and IST for clarity.
-
----
-
-### Workflow 4: Create Notes (Not Tasks)
-
-**Simple note:**
-```bash
-bun run scripts/ticktick.ts task "Meeting notes" --list "Work" --note
-```
-
-**Note with content:**
-```bash
-bun run scripts/ticktick.ts task "Sprint retrospective notes" \
-  --list "Work" \
-  --content "- What went well: ...\n- What to improve: ..." \
-  --note \
-  --json
-```
-**Output:**
-```json
-{
-  "id": "69d622418f08bed57094c296",
-  "projectId": "69d620ca8f08bed5709498e5",
-  "title": "Sprint retrospective notes",
-  "content": "- What went well: ...\n- What to improve: ...",
-  "kind": "NOTE",
-  "status": 0
-}
-```
-**When to use:** Meeting notes, ideas, free-form content that doesn't need due dates or reminders.
-
----
-
-### Workflow 5: Checklist Items (Sub-tasks)
-
-**View checklist items:**
-```bash
-bun run scripts/ticktick.ts checklist list "Buy groceries"
-```
-**Output:**
-```
-
-Checklist items for "Buy groceries" (3):
-
-○ [69d6210e] Milk
-○ [69d6210e] Eggs
-✓ [69d6210e] Bread
-```
-
-**Add checklist items:**
-```bash
-bun run scripts/ticktick.ts checklist add "Buy groceries" "Milk"
-bun run scripts/ticktick.ts checklist add "Buy groceries" "Eggs"
-bun run scripts/ticktick.ts checklist add "Buy groceries" "Bread"
-```
-**Output:**
-```
-✓ Checklist item added to "Buy groceries"
-  ID: checklist-1775640841410
-  Title: Milk
-```
-
-**Complete checklist item (by name or ID):**
-```bash
-bun run scripts/ticktick.ts checklist complete "Buy groceries" "Milk"
-```
-**Output:**
-```
-✓ Checklist item completed: "Milk"
-```
-
-**Delete checklist item:**
-```bash
-bun run scripts/ticktick.ts checklist delete "Buy groceries" "Eggs"
-```
-
----
-
-### Workflow 6: Complete, Abandon, and Move Tasks
-
-**Complete a task:**
-```bash
-bun run scripts/ticktick.ts complete "Buy groceries"
-```
-**Output:**
-```
-✓ Completed: "Buy groceries"
-```
-
-**Mark as won't do (abandon):**
-```bash
-bun run scripts/ticktick.ts abandon "Old idea"
-```
-**Output:**
-```
-✓ Abandoned: "Old idea"
-```
-
-**Move task to different project:**
-```bash
-bun run scripts/ticktick.ts move "Buy groceries" --to "Completed"
-```
-**Output:**
-```
-✓ Task moved: "Buy groceries"
-  From: Personal
-  To: Completed
-```
-
-**Move with explicit source (for ambiguous task names):**
-```bash
-bun run scripts/ticktick.ts move "Review PR" --from "Work" --to "Done"
-```
-
----
-
-### Workflow 7: Update Tasks
-
-**Update by task name:**
-```bash
-bun run scripts/ticktick.ts task "Buy groceries" --update --priority high
-```
-
-**Update by task ID (more reliable):**
-```bash
-bun run scripts/ticktick.ts task "69d6210e8f08ab5f35b111f4" --update --due tomorrow --content "Updated notes"
-```
-**Output:**
-```
-✓ Task updated: "Buy groceries"
-  ID: 69d6210e8f08ab5f35b111f4
-  Due UTC: 09 Apr 2026, 18:29:59 UTC
-  Due IST: 09 Apr 2026, 23:59:59 IST
-```
-
----
-
-### Workflow 8: Batch Operations
-
-**Abandon multiple tasks at once:**
-```bash
-bun run scripts/ticktick.ts batch-abandon 69d6210e8f08ab5f35b111f4 69d621538f08bed57094c296
-```
-**Output:**
-```
-✓ Abandoned 2 task(s)
-```
-
-**When to use:** Cleaning up multiple completed/old tasks in one API call.
-
----
-
-### Workflow 9: Project Management
-
-**List all projects:**
-```bash
-bun run scripts/ticktick.ts lists
-```
-**Output:**
-```
-
-Projects (5):
-
-• Test Project 1 (ID: 69d620ca8f08bed5709498e5) - Color: #FF5733
-• 🏋Body & Health (ID: 69d0de048f08bed5709498e6) - Color: #F9A825
-• Personal (ID: 69d0de048f08bed5709498e7)
-• Work (ID: 69d0de048f08bed5709498e8) - Color: #4285F4
-```
-
-**Create project:**
-```bash
-bun run scripts/ticktick.ts list "New Project" --color "#FF5733"
-```
-**Output:**
-```
-✓ Project created: "New Project"
-  ID: 69d620ca8f08bed5709498e5
-  Color: #FF5733
-```
-
-**Rename project:**
-```bash
-bun run scripts/ticktick.ts list "Old Name" --update --name "New Name"
-```
-
-**Change project color:**
-```bash
-bun run scripts/ticktick.ts list "Work" --update --color "#00FF00"
-```
-
----
-
-### Workflow 10: Kanban Columns
-
-**List columns by project name (substring match supported):**
-```bash
-bun run scripts/ticktick.ts columns "Work - ASBL"
-```
-**Output:**
-```
-Columns in "💼Work - ASBL" (7):
-  • To-Do
-    id: 6965f1fe20120f7fdb8d5d71
-  • In progress
-    id: 6965f27620120f7fdb8d5d96
-  ...
-```
-
-**List columns by project ID:**
-```bash
-bun run scripts/ticktick.ts columns "6965f1b020120f7fdb8d5d35" --json
-```
-**Output:**
-```json
-[
-  { "id": "6965f1fe20120f7fdb8d5d71", "name": "To-Do", "sortOrder": -1 },
-  { "id": "6965f27620120f7fdb8d5d96", "name": "In progress", "sortOrder": 65535 }
-]
-```
-
-Project names with emoji prefixes (e.g. "💼Work - ASBL") are matched via substring, so "Work - ASBL" or just "ASBL" works.
-
-**When to use:** Getting column IDs for task creation, move operations, or sync scripts.
-
----
-
-### Workflow 11: Sub-Tasks
-
-Sub-tasks are regular TickTick tasks with a `parentId` referencing a parent task. Used by the Linear sync to nest sub-issues.
-
-**List sub-tasks of a parent:**
-```bash
-bun run scripts/ticktick.ts subtask list "EREV-454: Migrate ASBL-v3 to web-monorepo"
-```
-**Output:**
-```
-Sub-tasks of "EREV-454: Migrate ASBL-v3 to web-monorepo" (3):
-
-pending [69f33400] EREV-457: Deploy on stage
-pending [69f33401] EREV-456: Shift env to aws secret manager
-pending [69f33402] EREV-455: Migrate ASBL-v3 code
-```
-
-**Add a sub-task:**
-```bash
-bun run scripts/ticktick.ts subtask add "EREV-454" "New sub-task title" --priority high --column "6965f27620120f7fdb8d5d96"
-```
-
-**Complete a sub-task:**
-```bash
-bun run scripts/ticktick.ts subtask complete "EREV-454" "EREV-457"
-```
-
-All subtask commands accept task ID (24-char hex) or title, and `--list` for project scoping. `--json` for machine-readable output.
-
-**When to use:** Nesting child tasks under a parent. The Linear-to-TickTick sync creates these automatically from Linear sub-issues.
-
----
-
-### Workflow 12: Practical Usage Patterns
-
-**Pattern 1 -- Find and move a task to a kanban column:**
-```bash
-# Get tasks from a project, find one, move it to a different column
-TASK_ID=$(bun run scripts/ticktick.ts tasks --list "Work - ASBL" --grep "EREV-397" --json --fields id | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
-bun run scripts/ticktick.ts move "$TASK_ID" --from "Work - ASBL" --column "69f3271b12f41102956c549d"
-```
-
-**Pattern 2 -- Get today's pending tasks as a quick summary:**
-```bash
-bun run scripts/ticktick.ts tasks --date today --status pending --limit 10 --sort priority:desc
-```
-
-**Pattern 3 -- Extract a section from a daily log for piping into another tool:**
-```bash
-bun run scripts/ticktick.ts get-task "Log - April 30" --content-only --section NUTRITION | claude -p "Summarize today's nutrition and check if calories are balanced." --max-turns 3 --output-format json
-```
-
----
-
-## Options Reference
-
-### Priority Levels
-| Level | Value | Display |
-|-------|-------|---------|
-| `none` | 0 | (no indicator) |
-| `low` | 1 | `!` |
-| `medium` | 3 | `!!` |
-| `high` | 5 | `!!!` |
-
-### Due Date Formats
-| Format | Example | Result |
-|--------|---------|--------|
-| Relative | `today` | Due today (interpreted in IST) |
-| Relative | `tomorrow` | Due tomorrow (interpreted in IST) |
-| Days from now | `in 3 days` | Due in 3 days (interpreted in IST) |
-| Next weekday | `next monday` | Next Monday (interpreted in IST) |
-| Date-only | `2025-12-25` | End of that day in IST |
-| Datetime (no timezone) | `2025-12-25 09:00` | 9:00 AM IST |
-| Datetime (explicit timezone) | `2025-12-25T09:00:00Z` | Exact provided timezone |
-| Time-only (for --from/--to) | `2:40pm` or `14:30` | Today at that time in IST |
-| Today + time | `today 2:40pm` | Today at 2:40 PM IST |
-| Tomorrow + time | `tomorrow 9am` | Tomorrow at 9:00 AM IST |
-
-### Date Filters (for `tasks` command)
-| Filter | Description |
-|--------|-------------|
-| `today` | Tasks due today |
-| `tomorrow` | Tasks due tomorrow |
-| `yesterday` | Tasks due yesterday |
-| `this week` | Tasks due this week (Mon-Sun) |
-| `next week` | Tasks due next week |
-| `overdue` | Overdue tasks |
-| `YYYY-MM-DD` | Specific date |
-
-### Reminder Formats
-| Format | Example | Result |
-|--------|---------|--------|
-| Minutes from now | `30m` | 30 minutes later |
-| Hours from now | `2h` | 2 hours later |
-| Specific time (IST default) | `9:00` | Today at 9:00 AM IST (or tomorrow if passed) |
-| Specific time (IST default) | `9am` | Today at 9:00 AM IST (or tomorrow if passed) |
-| With day | `today 9am` | Today at 9:00 AM IST |
-| Tomorrow | `tomorrow 9am` | Tomorrow at 9:00 AM IST |
-| Datetime (no timezone) | `2025-12-25 09:00` | 9:00 AM IST |
-| Datetime (explicit timezone) | `2025-12-25T09:00:00Z` | Exact provided timezone |
-
----
-
-## Agent Usage Best Practices
-
-### 1. Always Use `--json` for Reliability
-When writing scripts or AI agents, always use `--json` flag:
-```bash
-# Good - machine readable
-bun run scripts/ticktick.ts tasks --list "Work" --date today --json
-
-# Avoid - human readable only
-bun run scripts/ticktick.ts tasks --list "Work" --date today
-```
-
-### 2. Get Project IDs First
-Never guess project IDs. Always fetch them:
-```bash
-PROJECTS=$(bun run scripts/ticktick.ts lists --json)
-WORK_ID=$(echo $PROJECTS | jq -r '.[] | select(.name == "Work") | .id')
-```
-
-### 3. Use Task IDs for Updates/Completion
-Task names can be ambiguous across projects. Use IDs:
-```bash
-# Step 1: Get task ID
-TASK=$(bun run scripts/ticktick.ts tasks --list "Work" --date today --json | jq '.[0]')
-TASK_ID=$(echo $TASK | jq -r '.id')
-
-# Step 2: Use ID for operations
-bun run scripts/ticktick.ts task "$TASK_ID" --update --priority high
-bun run scripts/ticktick.ts complete "$TASK_ID"
-```
-
-### 4. Check for Errors
-Always check exit codes:
-```bash
-if bun run scripts/ticktick.ts task "New Task" --list "Work" --json; then
-  echo "Success"
-else
-  echo "Failed - check if project exists"
-fi
-```
-
-### 5. Common Error Messages
-| Error | Meaning | Fix |
-|-------|---------|-----|
-| `Not authenticated` | No valid token | Run `auth` command |
-| `Project not found` | Invalid project name/ID | Check `lists` command |
-| `Task not found` | Task doesn't exist or wrong project | Check `tasks` command |
-| `Multiple tasks found` | Ambiguous task name | Use task ID instead |
-| `Rate limit exceeded` | Too many API calls | Wait and retry |
-
----
-
-## Configuration
-
-Tokens are stored in `~/.hermes/credentials/ticktick-cli/config.json`:
-```json
-{
-  "clientId": "YOUR_CLIENT_ID",
-  "clientSecret": "YOUR_CLIENT_SECRET",
-  "accessToken": "...",
-  "refreshToken": "...",
-  "tokenExpiry": 1234567890000,
-  "redirectUri": "http://localhost:8080"
-}
-```
-
-Note: Credentials are stored in plaintext. The CLI attempts to set file permissions to 700/600; treat this file as sensitive.
-
-The CLI automatically refreshes tokens when they expire.
-
----
-
-## API Notes
-
-This CLI uses the [TickTick Open API v1](https://developer.ticktick.com/api).
-
-### Curl Structure (OAuth2)
-
-Use the OAuth token from `~/.hermes/credentials/ticktick-cli/config.json`:
+ticktick projects list --json                                  # ids and names, plus Inbox
+ticktick tasks list --json                                     # all open tasks (complete scan)
+ticktick tasks list -p <project> --priority high,medium --tag work --search invoice --json
+ticktick tasks list --from today --to 2026-11-02 --kind interval,point,deadline --json
+ticktick tasks list --sort due --limit 20 --fields id,title,schedule,etag --json
+ticktick tasks completed --from 2026-10-01 --to today --json   # paged past the 200 cap
+ticktick tasks abandoned --json
+ticktick task get <id> --json                                  # includes state + etag
+ticktick task subtasks <id> --json
+ticktick checklist list <id> --json
+ticktick agenda --json                                         # today
+ticktick agenda --date 2026-10-29 --json
+ticktick agenda --from 2026-10-29 --to 2026-11-04 --include-completed --json
+```
+
+Each task object has every raw TickTick field plus `projectName`, `state`, and `schedule`
+(`kind`, and `start`/`end`, `at`, or `startDay`/`endDay`, with timezone offsets).
+
+Agenda `data`: `range`, `entries[]`, `busy[]`, `conflicts[]`, `invalid[]`, `unscheduledCount`,
+and `recurrence { calculatedOccurrences, unsupportedSeries, exceptionsVisible: false }`. Each
+entry has `taskId`, `title`, `kind`, `blocksTime`, `status`, its time fields, and
+`occurrence` (for recurring tasks).
+
+Ranges are half-open. A date-only `--to` includes that whole day; a date-time `--to` is
+exclusive. The default timezone comes from the TickTick account. Pass `--tz <IANA>` to change it.
+
+## Write
 
 ```bash
-TOKEN=$(jq -r '.accessToken' ~/.hermes/credentials/ticktick-cli/config.json)
+# create — date-only values make all-day tasks; start<due is a time block
+ticktick task create "Title" -p <project> --start "2026-10-29T10:00" --due "2026-10-29T10:30" \
+  --priority high --tag work --reminder 10m --content "notes" --op-id <stable-key> --json
+ticktick task create "Pay rent" -p Home --due 2026-11-01 --op-id rent-2026-11 --json
+ticktick task create "Standup" -p Work --start "tomorrow 10:00" --due "tomorrow 10:15" \
+  --repeat "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR" --json
+ticktick task create "Sub item" --parent <taskId> --json
+ticktick task create "Packing" -p Home --item Passport --item Charger --json
+
+# update — sends only the flags given; other fields are kept
+ticktick task update <id> --title "New" --due "2026-10-30T17:00" --if-etag <etag> --json
+ticktick task update <id> --add-tag urgent --remove-tag later --json
+ticktick task update <id> --clear-due --json        # warning: clearing dates can drop recurrence
+ticktick task update <id> --repeat none --json
+
+ticktick task complete <id> --json                  # recurring: outcome "occurrence_completed"
+ticktick task complete <id> --op-id <key> --json    # at most once per key
+ticktick task abandon <id> --json
+ticktick task move <id> --to <project> [--column <columnId>] --json
+ticktick task delete <id> --yes --json              # id only; --yes is required in scripts
+
+ticktick tasks complete <id> <id> ... --json        # batch, per-task results
+ticktick tasks abandon <id> <id> ... --json
+
+ticktick checklist add <task> "Item" --json
+ticktick checklist complete <task> <itemIdOrTitle> --json
+ticktick checklist reopen <task> <item> --json
+ticktick checklist delete <task> <item> --json
 ```
 
-Core request pattern:
+Every write accepts `--dry-run`. Writes always use live data. `--cache-ttl` is rejected on
+write commands.
 
-```bash
-curl -s \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  https://api.ticktick.com/open/v1/project
-```
+## Errors → what to do
 
-Important endpoints:
+| Code (exit) | Meaning | Action |
+|---|---|---|
+| `INVALID_ARGUMENT` (2) | Bad flag, date, priority, field | Fix the input; nothing was sent |
+| `AUTH_*` (3) | No, expired, or rejected token | Ask the user to authenticate |
+| `INSECURE_CREDENTIALS` (3) | Config path is a symlink or owned by someone else | Report to the user |
+| `NOT_FOUND` (4) | No such task or project | Not "completed"; confirm the id |
+| `TASK_NOT_OPEN` (4) | Task is completed, abandoned, or deleted | Report `details.state`; do not retry |
+| `REMOTE_MISSING` (4) | `--op-id` task no longer exists | Ask before recreating |
+| `AMBIGUOUS` (5) | Several matches | Show `details.candidates`; use an id |
+| `PARTIAL_DATA` (6) | Some project reads failed | Retry; or `--allow-partial` and say the data is incomplete |
+| `RATE_LIMITED` / `NETWORK_ERROR` (7) | Transient | Wait, then retry reads |
+| `UNCERTAIN_WRITE` (8) | Outcome unknown | Check state; do not repeat blindly (rule 8) |
+| `VERIFY_FAILED` (8) | Server stored something different | Read the task again; report the difference |
+| `BATCH_PARTIAL_FAILURE` (8) | Some batch items failed | Report `details.results`; retry only the failed, still-open ids |
+| `CONFLICT` (9) | Task changed since your read (`--if-etag`) | Read it again; ask the user |
+| `OP_ID_CONFLICT` (9) | Op id reused for a different request | Use a new key, or fix the request |
+| `UNSUPPORTED_CAPABILITY` (10) | The API cannot do this | Stop and explain |
+| `CONFIRMATION_REQUIRED` (11) | Destructive action without `--yes` | Get explicit user approval first |
 
-- List projects: `GET /open/v1/project`
-- Fetch tasks for a project: `GET /open/v1/project/{projectId}/data`
-- Create task: `POST /open/v1/task`
-- Update task: `POST /open/v1/task/{taskId}`
+## Limits to tell users about
 
-Note: `GET /open/v1/project/{projectId}/task` is not valid (404). Use `/data`.
-
-### Rate Limits
-- **100 requests per minute**
-- **300 requests per 5 minutes**
-
-The CLI has built-in retry logic with exponential backoff for rate limit errors.
-
-### Task Status Values
-| Status | Value | Meaning |
-|--------|-------|---------|
-| Normal | 0 | Active task |
-| Completed | 2 | Done |
-| Abandoned | -1 | Won't do |
-
-### Task Kinds
-| Kind | Description |
-|------|-------------|
-| `TASK` | Regular task with due dates, reminders |
-| `NOTE` | Free-form note without dates/priorities |
-
----
-
-## Quick Command Reference
-
-| Command | Purpose | Output |
-|---------|---------|--------|
-| `lists --json` | Get project IDs | JSON array of projects |
-| `tasks --date today --json` | Today's tasks | JSON array of tasks |
-| `tasks --list "Project" --grep "pattern"` | Filter tasks by title/content regex | Filtered task list |
-| `tasks --list "Project" --sort dueDate:asc --limit 5` | Top-5 by due date | Sorted + limited task list |
-| `tasks --list "Project" --json --fields id,title` | JSON with selected fields only | Compact JSON array |
-| `get-task "<task-id-or-title>" --json` | Get one task | JSON task object with full `content` |
-| `get-task "<id>" --json --fields id,title,content` | JSON with selected fields only | Compact JSON object |
-| `get-task "<id>" --content-only` | Get raw content field only | Plain text, pipeable |
-| `get-task "<id>" --content-only --grep "pattern"` | Get matching content lines only | Filtered plain text |
-| `get-task "<id>" --content-only --section SLEEP` | Get lines under `# SLEEP` section | Section plain text |
-| `task "Title" --list "Project" --from "2pm" --to "5pm" --json` | Create time block | JSON task with startDate + dueDate |
-| `task "Title" --list "Project" --json` | Create task | JSON task object |
-| `task "Title" --list "Project" --note --json` | Create note | JSON note object |
-| `complete "Task" --json` | Complete task | JSON success + task info |
-| `subtask list "Task"` | List sub-tasks | Sub-task list with status |
-| `subtask add "Task" "Title"` | Create sub-task | Sub-task ID + confirmation |
-| `subtask complete "Task" "Sub"` | Complete sub-task | JSON updated sub-task |
-| `checklist add "Task" "Item"` | Add checklist item | Item ID + confirmation |
-| `move "Task" --to "Project" --json` | Move task | JSON updated task |
-|| `columns "Project"` | List kanban columns | Column list with IDs |
-|| `columns "Project" --json` | Columns as JSON | JSON array with ids, names, sortOrders |
-|| `tasks --date overdue --json` | Get overdue | JSON array for triage |
+- Completed history can be partial only if more than 200 tasks were completed within one
+  second. Abandoned tasks stop at 200 per project.
+- A deleted task looks open when read by id. The CLI reports it as `deleted_or_unknown`.
+- There are no server-side idempotency keys. `--op-id` protects only calls made through this CLI.
+- About 100 requests per short window. A full `tasks list` uses about 15. Prefer one scan
+  with local filtering over many small calls.
