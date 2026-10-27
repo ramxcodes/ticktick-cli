@@ -58,7 +58,7 @@ export async function projectUpdate(rt: Runtime, ref: string, opts: { name?: str
 export async function projectColumns(rt: Runtime, ref: string): Promise<void> {
   const api = await rt.api(true);
   const { project } = resolveProject(await listProjectsWithInbox(api), ref);
-  const columns = await api.listColumns(project.id === INBOX_ALIAS ? "inbox" : project.id);
+  const columns = await api.listColumns(project.id);
   const sorted = [...columns].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id.localeCompare(b.id));
   rt.out.success(sorted, () => (sorted.length ? sorted.map((c) => `${c.id}  ${c.name}`).join("\n") : `No columns in ${project.name} (only kanban projects have columns).`), rt.metaSources());
 }

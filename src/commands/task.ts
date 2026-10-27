@@ -49,6 +49,8 @@ export function writeMismatches(expected: TaskWrite, actual: Task): Array<{ fiel
   const check = (field: string, ok: boolean, exp: unknown, act: unknown) => {
     if (!ok) out.push({ field, expected: exp, actual: act });
   };
+  const inboxAlias = expected.projectId === INBOX_ALIAS && actual.projectId.startsWith("inbox");
+  check("projectId", actual.projectId === expected.projectId || inboxAlias, expected.projectId, actual.projectId);
   if (expected.title !== undefined) check("title", actual.title === expected.title, expected.title, actual.title);
   if (expected.content !== undefined) check("content", (actual.content ?? "") === expected.content, expected.content, actual.content);
   if (expected.priority !== undefined) check("priority", (actual.priority ?? 0) === expected.priority, expected.priority, actual.priority);
@@ -151,7 +153,8 @@ export async function taskCreate(rt: Runtime, title: string, opts: CreateOptions
     parentId = parent.task.id;
   } else {
     const p = resolveProject(projects, opts.project!).project;
-    projectId = p.id;
+    // Prefer the real Inbox id; the "inbox" alias is only a fallback when the Inbox is empty.
+    projectId = p.id === INBOX_ALIAS ? ((await findInboxId(api)) ?? INBOX_ALIAS) : p.id;
     projectName = p.name;
   }
 

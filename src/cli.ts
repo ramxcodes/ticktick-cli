@@ -202,7 +202,8 @@ try {
   await program.parseAsync(process.argv);
 } catch (error) {
   if (error instanceof CommanderError) {
-    if (error.code === "commander.helpDisplayed" || error.code === "commander.version" || error.code === "commander.help") process.exit(0);
+    // --help and --version exit 0; help shown because a subcommand is missing is a usage error.
+    if (error.exitCode === 0) process.exit(0);
     const json = process.argv.includes("--json");
     const e = new CliError("INVALID_ARGUMENT", error.message.replace(/^error: /, ""));
     if (json) new Output(true).failure(e, { usedApi: false });

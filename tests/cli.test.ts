@@ -169,6 +169,11 @@ describe("writes", () => {
     expect(r.json.data.requests[0]).toMatchObject({ method: "POST", path: "/task", body: { title: "Plan", projectId: ID.work, dueDate: "2026-10-29T04:30:00.000+0000", isAllDay: false, timeZone: "Asia/Kolkata" } });
     expect(fake.writes()).toEqual([]);
   });
+  test("a create that lands in another project is VERIFY_FAILED", async () => {
+    fake.faults = [{ match: /POST \/task$/, status: 200, body: JSON.stringify({ id: "f00000000000000000000001", projectId: ID.home, title: "Plan", status: 0 }) }];
+    const r = await cli(["task", "create", "Plan", "--project", "Work"]);
+    expect(r.json.error).toMatchObject({ code: "VERIFY_FAILED", details: { mismatches: [{ field: "projectId" }] } });
+  });
   test("date-only input creates an all-day task with an exclusive end", async () => {
     const r = await cli(["task", "create", "Trip", "--project", "Home", "--start", "2026-11-04", "--due", "2026-11-05"]);
     expect(r.json.data.task).toMatchObject({ isAllDay: true, schedule: { kind: "all-day", startDay: "2026-11-04", endDay: "2026-11-05" } });

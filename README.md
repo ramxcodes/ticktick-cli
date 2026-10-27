@@ -283,7 +283,8 @@ Completing an occurrence creates a separate completed task with a new id. It sho
   matches what the API returns for tasks the CLI creates. It has not been confirmed against
   multi-day tasks created in the TickTick apps.
 - The Inbox has no listed project id. Its real id is learned from its tasks, so moving a task
-  into an empty Inbox is not possible.
+  into an empty Inbox is not possible. Creating a task in an empty Inbox sends the documented
+  `inbox` alias, and the server's answer is checked.
 - Rate limit: about 100 requests in a short window. A full scan uses about 15 requests. On a
   429, all requests pause for the `Retry-After` time.
 
