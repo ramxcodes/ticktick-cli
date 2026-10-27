@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatApiDate, formatIso, parseApiDate, parseRange, parseUserDate, zonedToInstant } from "../src/time";
+import { formatApiDate, formatIso, parseApiDate, parseRange, parseUserDate, zonedToInstant } from "../../src/time";
 
 const NOW = Date.parse("2026-10-27T10:00:00Z"); // 15:30 in Kolkata
 const KOL = "Asia/Kolkata";

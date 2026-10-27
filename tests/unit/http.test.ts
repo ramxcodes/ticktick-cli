@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { ApiClient } from "../src/http";
-import { CliError } from "../src/errors";
+import { ApiClient } from "../../src/http";
+import { CliError } from "../../src/errors";
 
 type Reply = { status: number; body?: string; headers?: Record<string, string> } | "network" | "timeout";
 

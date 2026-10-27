@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { expandAfter, parseRRule } from "../src/rrule";
-import { formatIso, zonedToInstant } from "../src/time";
+import { expandAfter, parseRRule } from "../../src/rrule";
+import { formatIso, zonedToInstant } from "../../src/time";
 
 const KOL = "Asia/Kolkata";
 const NY = "America/New_York";

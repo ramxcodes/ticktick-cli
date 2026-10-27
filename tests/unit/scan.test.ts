@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { TickTickApi, type CompletedQuery } from "../src/api";
-import { ApiClient } from "../src/http";
-import { fetchCompleted, scanOpenTasks } from "../src/scan";
-import { formatApiDate, parseApiDate } from "../src/time";
-import type { Task } from "../src/types";
+import { TickTickApi, type CompletedQuery } from "../../src/api";
+import { ApiClient } from "../../src/http";
+import { fetchCompleted, scanOpenTasks } from "../../src/scan";
+import { formatApiDate, parseApiDate } from "../../src/time";
+import type { Task } from "../../src/types";
 
 /** Fake /task/completed with the observed contract: inclusive bounds, newest first, 200 cap. */
 class FakeHistory extends TickTickApi {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { buildAgenda, classify } from "../src/agenda";
-import { parseRange } from "../src/time";
-import type { Task } from "../src/types";
+import { buildAgenda, classify } from "../../src/agenda";
+import { parseRange } from "../../src/time";
+import type { Task } from "../../src/types";
 
 const KOL = "Asia/Kolkata";
 const NOW = Date.parse("2026-10-27T10:00:00Z");

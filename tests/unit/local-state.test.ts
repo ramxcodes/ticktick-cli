@@ -2,20 +2,22 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmod, mkdtemp, rm, stat, symlink, writeFile, mkdir } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import { loadConfig, saveConfig, securityNotices } from "../src/config";
-import { findOp, resolveOp, runOnce } from "../src/ops";
-import { CliError } from "../src/errors";
-import { matchByName, resolveProject } from "../src/resolve";
-import { ReadCache } from "../src/cache";
-import { ApiClient } from "../src/http";
+import { loadConfig, saveConfig, securityNotices } from "../../src/config";
+import { findOp, resolveOp, runOnce } from "../../src/ops";
+import { CliError } from "../../src/errors";
+import { matchByName, resolveProject } from "../../src/resolve";
+import { ReadCache } from "../../src/cache";
+import { ApiClient } from "../../src/http";
 
+// Restore the suite-wide temp dir from tests/setup.ts, so later tests never fall back to the real config dir.
+const suiteConfigDir = process.env.TICKTICK_CONFIG_DIR!;
 let dir: string;
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "tt-test-"));
   process.env.TICKTICK_CONFIG_DIR = join(dir, "cfg");
 });
 afterEach(async () => {
-  delete process.env.TICKTICK_CONFIG_DIR;
+  process.env.TICKTICK_CONFIG_DIR = suiteConfigDir;
   await rm(dir, { recursive: true, force: true });
 });
 

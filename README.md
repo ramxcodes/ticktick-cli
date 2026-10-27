@@ -320,9 +320,16 @@ Environment variables: `TICKTICK_TOKEN`, `TICKTICK_CONFIG_DIR`, `TICKTICK_CLIENT
 
 ```bash
 bun install
-bun run check                      # strict typecheck + unit and end-to-end tests (fake server)
+bun run check                      # strict typecheck + unit tests: run before every change
+bun run test:e2e                   # end-to-end: spawns the CLI ~50 times against a local fake server
+bun run test:all                   # unit + end-to-end: run before merging
 TICKTICK_LIVE=1 bun run test:live  # live checks in disposable projects, cleaned up afterwards
 bun run build                      # single-file binary in dist/ticktick
 ```
+
+Tests live in `tests/unit` (in-process, no network), `tests/e2e` (real CLI process against
+`tests/e2e/fake-server.ts`), and `tests/live` (real TickTick API, opt-in only). `tests/setup.ts`
+is preloaded by `bun test`: it blocks any request to a non-local host, drops `TICKTICK_TOKEN`,
+and points the config dir at a temp folder, so normal test runs cannot touch real data.
 
 For agents, see [SKILL.md](SKILL.md).

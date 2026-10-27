@@ -56,7 +56,7 @@ interface Result {
 }
 
 async function cli(args: string[], env: Record<string, string> = {}): Promise<Result> {
-  const proc = Bun.spawn(["bun", join(import.meta.dir, "../src/cli.ts"), ...args, "--json"], {
+  const proc = Bun.spawn(["bun", join(import.meta.dir, "../../src/cli.ts"), ...args, "--json"], {
     env: {
       PATH: process.env.PATH!,
       HOME: configDir,

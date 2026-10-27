@@ -1,4 +1,4 @@
-import type { Project, Task } from "../src/types";
+import type { Project, Task } from "../../src/types";
 
 /**
  * Minimal stateful emulation of the TickTick Open API endpoints the CLI uses, with the
