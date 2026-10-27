@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import type { ReadCache } from "./cache";
 import { CliError } from "./errors";
 
@@ -75,10 +76,13 @@ export class ApiClient {
 
   private async cachedGet<T>(path: string): Promise<T> {
     const cache = this.options.cache;
-    const hit = cache ? await cache.get(path) : undefined;
+    if (!cache) return this.request<T>("GET", path, undefined, "read");
+    // Keyed by a token fingerprint so one account never sees another account's data.
+    const key = `${createHash("sha256").update(await this.options.getToken()).digest("hex").slice(0, 16)}:${path}`;
+    const hit = await cache.get(key);
     if (hit !== undefined) return hit as T;
     const body = await this.request<T>("GET", path, undefined, "read");
-    await cache?.set(path, body);
+    await cache.set(key, body);
     return body;
   }
 

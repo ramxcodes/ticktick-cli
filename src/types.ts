@@ -5,7 +5,6 @@
 
 /** Task status. Documented: Abandoned -1, Normal 0, Completed 2. */
 export const TaskStatus = { Abandoned: -1, Open: 0, Completed: 2 } as const;
-export type TaskStatusValue = (typeof TaskStatus)[keyof typeof TaskStatus];
 
 /** Checklist item status. Documented: Normal 0, Completed 1. */
 export const ItemStatus = { Open: 0, Completed: 1 } as const;

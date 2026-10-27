@@ -3,7 +3,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { resolveToken } from "../auth";
 import { configDir, configFile, loadConfig, saveConfig, SETTABLE_KEYS, type SettableKey } from "../config";
-import { CliError, toCliError } from "../errors";
+import { CliError, toCliError, type ErrorCode } from "../errors";
 import { getOp, listOps, resolveOp } from "../ops";
 import { locateTask } from "../resolve";
 import { listProjectsWithInbox, scanOpenTasks } from "../scan";
@@ -74,19 +74,23 @@ export async function opsResolve(rt: Runtime, opId: string, opts: { task?: strin
   rt.out.success(record, (r) => `✓ ${r.opId} is now ${r.state}`, rt.metaSources());
 }
 
-type Check = { name: string; status: "ok" | "warn" | "fail"; detail: string };
+type Check = { name: string; status: "ok" | "warn" | "fail"; detail: string; code?: ErrorCode };
 
 /** `doctor`: configuration, credentials, connectivity, and capability checks. Never prints secrets. */
 export async function doctor(rt: Runtime): Promise<void> {
   const checks: Check[] = [];
-  const add = (name: string, status: Check["status"], detail: string) => checks.push({ name, status, detail });
+  const add = (name: string, status: Check["status"], detail: string, code?: ErrorCode) => checks.push({ name, status, detail, ...(code ? { code } : {}) });
+  const fail = (name: string, error: unknown) => {
+    const e = toCliError(error);
+    add(name, "fail", `${e.code}: ${e.message}`, e.code);
+  };
   add("version", "ok", `ticktick-cli ${pkg.version}, Bun ${Bun.version}, ${process.platform}`);
 
   try {
     await loadConfig();
     add("config", "ok", `${configFile()} (directory 700, file 600 enforced)`);
   } catch (error) {
-    add("config", "fail", toCliError(error).message);
+    fail("config", error);
   }
   const legacy = join(homedir(), ".hermes", "credentials", "ticktick-cli");
   if (legacy !== configDir() && (await lstat(legacy).then(() => true, () => false))) {
@@ -100,7 +104,7 @@ export async function doctor(rt: Runtime): Promise<void> {
     add("credentials", days !== undefined && days < 7 ? "warn" : "ok", `source: ${t.source}${days !== undefined ? `, expires in ${days} day(s)` : ""}`);
     authed = true;
   } catch (error) {
-    add("credentials", "fail", toCliError(error).message);
+    fail("credentials", error);
   }
 
   if (authed) {
@@ -115,14 +119,13 @@ export async function doctor(rt: Runtime): Promise<void> {
       await api.filterTasks({ status: [-1] });
       add("capability:abandoned", "ok", "POST /task/filter reachable");
     } catch (error) {
-      const e = toCliError(error);
-      add("api", "fail", `${e.code}: ${e.message}`);
+      fail("api", error);
     }
     try {
       const info = await rt.timezoneInfo();
       add("timezone", "ok", `${info.name} (from ${info.source}; machine is ${machineTimeZone()})`);
     } catch (error) {
-      add("timezone", "fail", toCliError(error).message);
+      fail("timezone", error);
     }
   }
 
@@ -130,7 +133,7 @@ export async function doctor(rt: Runtime): Promise<void> {
   const human = () => checks.map((c) => `${{ ok: "✓", warn: "!", fail: "✗" }[c.status]} ${c.name}: ${c.detail}`).join("\n");
   if (failed.length > 0) {
     if (!rt.out.json) process.stdout.write(human() + "\n");
-    throw new CliError("INVALID_CONFIG", `${failed.length} check(s) failed: ${failed.map((c) => c.name).join(", ")}.`, { checks });
+    throw new CliError(failed[0]!.code ?? "INVALID_CONFIG", `${failed.length} check(s) failed: ${failed.map((c) => c.name).join(", ")}.`, { checks });
   }
   rt.out.success({ checks }, human, rt.metaSources());
 }

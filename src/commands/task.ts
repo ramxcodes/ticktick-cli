@@ -6,7 +6,8 @@ import { isObjectId, locateOpenTask, locateTask, resolveProject } from "../resol
 import { parseRRule } from "../rrule";
 import type { Runtime } from "../runtime";
 import { listProjectsWithInbox } from "../scan";
-import { formatApiDate, parseApiDate } from "../time";
+import { addDays, formatApiDate, formatIso, formatLocalDate, parseApiDate } from "../time";
+import { classify } from "../agenda";
 import { TaskStatus, type ProjectTask, type Task, type TaskWrite } from "../types";
 import { buildDates, parseFields, parsePriority, parseReminder, pickFields, taskDetails, taskLine, toTaskView, type TaskView } from "./shared";
 
@@ -252,16 +253,25 @@ export async function taskUpdate(rt: Runtime, ref: string, opts: UpdateOptions):
   }
 
   if (opts.start !== undefined || opts.due !== undefined || opts.allDay !== undefined) {
-    const dates = buildDates({ start: opts.start, due: opts.due, allDay: opts.allDay }, tz, rt.now, formatApiDate);
-    const finalStart = opts.clearStart ? undefined : dates.startDate ?? task.startDate;
-    const finalDue = opts.clearDue ? undefined : dates.dueDate ?? task.dueDate;
-    const keptOther = (opts.start === undefined && !opts.clearStart && task.startDate) || (opts.due === undefined && !opts.clearDue && task.dueDate);
-    if (keptOther && dates.isAllDay !== Boolean(task.isAllDay)) {
-      throw new CliError("INVALID_ARGUMENT", "Switching between all-day and timed needs both --start and --due (or clearing the other date).");
-    }
-    const s = parseApiDate(finalStart);
-    const d = parseApiDate(finalDue);
-    if (typeof s === "number" && typeof d === "number" && d < s) throw new CliError("INVALID_ARGUMENT", "The resulting due date would be before the start date.");
+    // The date the user did not name is fed back in as it is now, so only the named one changes
+    // and the result is validated as a whole (start <= due, all-day vs timed).
+    const current = classify(task, tz);
+    const keep = (which: "start" | "due"): string | undefined => {
+      const ms = parseApiDate(which === "start" ? task.startDate : task.dueDate);
+      if (typeof ms !== "number" || current.kind === "invalid") return undefined;
+      if (current.kind === "all-day") return formatLocalDate(which === "start" ? current.days!.first : addDays(current.days!.afterLast, -1));
+      return formatIso(ms, tz);
+    };
+    const dates = buildDates(
+      {
+        start: opts.start ?? (opts.clearStart ? undefined : keep("start")),
+        due: opts.due ?? (opts.clearDue ? undefined : keep("due")),
+        allDay: opts.allDay,
+      },
+      tz,
+      rt.now,
+      formatApiDate,
+    );
     Object.assign(body, dates, { timeZone: tz });
   }
   if (opts.clearStart) body.startDate = null;

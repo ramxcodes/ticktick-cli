@@ -162,11 +162,12 @@ function sortByCompletedDesc(tasks: Task[]): Task[] {
 /**
  * Abandoned ("won't do") tasks via /task/filter. The filter has no usable date
  * partition for undated tasks, so a capped answer is split per project; a project
- * that still returns 200 rows is reported as partial.
+ * that still returns 200 rows is reported as partial. For the whole account the first
+ * query sends no project filter, so the Inbox is included without needing its id.
  */
-export async function fetchAbandoned(api: TickTickApi, projectIds: string[]): Promise<HistoryResult> {
+export async function fetchAbandoned(api: TickTickApi, projectIds: string[], wholeAccount: boolean): Promise<HistoryResult> {
   const warnings: string[] = [];
-  const combined = await api.filterTasks({ projectIds, status: [TaskStatus.Abandoned] });
+  const combined = await api.filterTasks({ ...(wholeAccount ? {} : { projectIds }), status: [TaskStatus.Abandoned] });
   if (combined.length < RESULT_CAP) {
     return { tasks: combined.filter((t) => t.status === TaskStatus.Abandoned), coverage: "complete", warnings, pages: 1 };
   }

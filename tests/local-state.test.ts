@@ -6,6 +6,8 @@ import { loadConfig, saveConfig, securityNotices } from "../src/config";
 import { findOp, resolveOp, runOnce } from "../src/ops";
 import { CliError } from "../src/errors";
 import { matchByName, resolveProject } from "../src/resolve";
+import { ReadCache } from "../src/cache";
+import { ApiClient } from "../src/http";
 
 let dir: string;
 beforeEach(async () => {
@@ -107,5 +109,44 @@ describe("name resolution", () => {
   });
   test("ids win over names", () => {
     expect(resolveProject([{ id: "Home", name: "x" }, { id: "2", name: "Home" }], "Home").project.id).toBe("Home");
+  });
+});
+
+describe("read cache", () => {
+  const clientFor = (token: string, cache: ReadCache, calls: string[]) =>
+    new ApiClient({
+      baseUrl: "https://x",
+      getToken: async () => token,
+      cache,
+      fetch: (async () => {
+        calls.push(token);
+        return Response.json([token]);
+      }) as unknown as typeof fetch,
+    });
+
+  test("serves fresh entries, reports their age, and never crosses accounts", async () => {
+    let now = 1_000_000;
+    const calls: string[] = [];
+    const first = new ReadCache(60, () => now);
+    expect(await clientFor("token-a", first, calls).get("/project")).toEqual(["token-a"]);
+    await first.flush();
+
+    now += 30_000;
+    const second = new ReadCache(60, () => now);
+    expect(await clientFor("token-a", second, calls).get("/project")).toEqual(["token-a"]);
+    expect(second.stats).toMatchObject({ hits: 1, oldestHitAgeSeconds: 30 });
+    expect(await clientFor("token-b", second, calls).get("/project")).toEqual(["token-b"]);
+    expect(calls).toEqual(["token-a", "token-b"]);
+  });
+
+  test("expired entries are refetched", async () => {
+    let now = 0;
+    const calls: string[] = [];
+    const c1 = new ReadCache(10, () => now);
+    await clientFor("t", c1, calls).get("/project");
+    await c1.flush();
+    now = 11_000;
+    await clientFor("t", new ReadCache(10, () => now), calls).get("/project");
+    expect(calls).toHaveLength(2);
   });
 });

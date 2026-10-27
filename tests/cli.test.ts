@@ -119,6 +119,18 @@ describe("reads", () => {
     expect(kinds).toEqual([["Standup", "interval", true], ["Write report", "deadline", false]]);
     expect(r.json.data.busy).toEqual([{ start: "2026-10-28T12:00:00+05:30", end: "2026-10-28T12:15:00+05:30" }]);
   });
+  test("--overdue lists only tasks whose due moment has passed", async () => {
+    fake.tasks.push(
+      task({ id: "e00000000000000000000001", projectId: ID.work, title: "Late", dueDate: at("2020-01-01T09:00") }),
+      task({ id: "e00000000000000000000002", projectId: ID.work, title: "Future", dueDate: at("2099-01-01T09:00") }),
+      task({ id: "e00000000000000000000003", projectId: ID.work, title: "Old trip", isAllDay: true, startDate: at("2020-02-01T00:00"), dueDate: at("2020-02-01T00:00") }),
+    );
+    const r = await cli(["tasks", "list", "--overdue"]);
+    const titles = r.json.data.map((t: { title: string }) => t.title);
+    expect(titles).toContain("Late");
+    expect(titles).toContain("Old trip");
+    expect(titles).not.toContain("Future");
+  });
   test("rate limiting is retried and counted", async () => {
     fake.faults = [{ match: /GET \/project$/, status: 429, headers: { "Retry-After": "0" } }];
     const r = await cli(["projects", "list"]);
@@ -199,6 +211,16 @@ describe("writes", () => {
     const body = fake.writes()[0]!.body as Record<string, unknown>;
     expect(Object.keys(body).sort()).toEqual(["id", "projectId", "tags", "title"]);
     expect(r.json.data.task).toMatchObject({ title: "Write final report", tags: ["deep", "q4"], reminders: ["TRIGGER:PT0S"], dueDate: at("2026-10-28T17:00") });
+  });
+  test("changing one date keeps the other", async () => {
+    const trip = await cli(["task", "create", "Trip", "--project", "Home", "--start", "2026-12-01", "--due", "2026-12-03"]);
+    const id = trip.json.data.task.id;
+    const r = await cli(["task", "update", id, "--due", "2026-12-05"]);
+    expect(r.json.data.task.schedule).toEqual({ kind: "all-day", startDay: "2026-12-01", endDay: "2026-12-05" });
+    const meet = await cli(["task", "update", ID.meeting, "--due", "2026-10-28T12:45"]);
+    expect(meet.json.data.task.schedule).toEqual({ kind: "interval", start: "2026-10-28T12:00:00+05:30", end: "2026-10-28T12:45:00+05:30" });
+    const bad = await cli(["task", "update", ID.meeting, "--due", "2026-10-28T11:00"]);
+    expect(bad.json.error!.code).toBe("INVALID_ARGUMENT");
   });
   test("--if-etag detects a concurrent change", async () => {
     const r = await cli(["task", "update", ID.report, "--title", "x", "--if-etag", "stale"]);

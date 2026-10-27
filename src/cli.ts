@@ -73,6 +73,7 @@ tasks
   .option("--date <date>", "scheduled on this day")
   .option("--from <date>", "scheduled in range start")
   .option("--to <date>", "scheduled in range end (a date includes that day)")
+  .option("--overdue", "due time (or all-day date) already passed")
   .option("--sort <field[:dir]>", "project|title|priority|start|due|created|modified (default project)")
   .option("--limit <n>", "show at most n tasks")
   .option("--fields <list>", "comma list of fields to output")

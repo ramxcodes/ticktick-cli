@@ -2,7 +2,6 @@
   "name": "ticktick-cli",
   "version": "2.0.0",
   "description": "Reliable TickTick CLI for humans, scripts, and AI agents",
-  "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
@@ -26,7 +25,8 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "build": "bun build src/cli.ts --compile --outfile dist/ticktick",
-    "check": "tsc --noEmit && bun test"
+    "check": "tsc --noEmit && bun test",
+    "test:live": "bun tests/live/live-check.ts"
   },
   "dependencies": {
     "commander": "^12.1.0"

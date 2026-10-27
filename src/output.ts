@@ -87,12 +87,14 @@ export class Output {
       const envelope: Envelope<never> = {
         ok: false,
         error: { code: error.code, message: error.message, ...(error.details !== undefined ? { details: error.details } : {}) },
-        meta: this.meta(sources),
+        // A failed command returns no data, so nothing about its completeness is known.
+        meta: { ...this.meta(sources), coverage: "unknown" },
       };
       this.stdout(JSON.stringify(envelope, null, 2) + "\n");
       return;
     }
     this.stderr(`error [${error.code}]: ${error.message}\n`);
+    if (error.details !== undefined) this.stderr(`details: ${JSON.stringify(error.details, null, 2)}\n`);
     this.flushWarnings();
   }
 

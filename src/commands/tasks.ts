@@ -24,6 +24,7 @@ export interface ListOptions {
   sort?: string;
   limit?: string;
   fields?: string;
+  overdue?: boolean;
   includeClosed?: boolean;
   allowPartial?: boolean;
 }
@@ -97,6 +98,7 @@ export async function tasksList(rt: Runtime, opts: ListOptions): Promise<void> {
   const api = await rt.api(true);
   const [tz, projects] = await Promise.all([rt.timezone(), listProjectsWithInbox(api)]);
   const range = opts.from || opts.to || opts.date ? parseRange(opts, tz, rt.now) : undefined;
+  if (range && opts.overdue) throw new CliError("INVALID_ARGUMENT", "--overdue cannot be combined with a date range.");
   const scope = opts.project ? [resolveProject(projects, opts.project).project] : projects;
   const scan = await scanOpenTasks(api, { projects: scope, includeClosed: opts.includeClosed || Boolean(opts.project), allowPartial: opts.allowPartial });
   rt.out.setCoverage(scan.coverage);
@@ -108,6 +110,8 @@ export async function tasksList(rt: Runtime, opts: ListOptions): Promise<void> {
     .filter((t) => textMatch(t, opts.search))
     .map((t) => ({ task: t, schedule: classify(t, tz) }))
     .filter(({ schedule }) => !kinds || kinds.includes(schedule.kind))
+    // Overdue: the due moment (interval end, point, deadline) or the last all-day date has passed.
+    .filter(({ schedule: s }) => !opts.overdue || (s.start !== undefined && (s.end ?? s.start) <= rt.now && s.kind !== "unscheduled"))
     .filter(({ schedule: s }) => {
       if (!range) return true;
       if (s.start === undefined) return false;
@@ -167,7 +171,7 @@ export async function tasksAbandoned(rt: Runtime, opts: Omit<HistoryOptions, "fr
   const { projects, name } = await projectNames(rt);
   const project = opts.project ? resolveProject(projects, opts.project).project : undefined;
   const ids = project ? [project.id] : projects.map((p) => p.id);
-  const history = await fetchAbandoned(api, ids);
+  const history = await fetchAbandoned(api, ids, !project);
   rt.out.setCoverage(history.coverage);
   history.warnings.forEach((w) => rt.out.warn(w));
   const views = history.tasks.filter((t) => textMatch(t, opts.search)).map((t) => toTaskView(t, name(t.projectId), "abandoned", tz));
